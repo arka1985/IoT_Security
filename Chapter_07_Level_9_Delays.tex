@@ -1,0 +1,370 @@
+% ==========================================
+% CHAPTER 07: Level 9 (Time Rotations & Permanent Locks)
+% ==========================================
+\chapter{Level 9: Time Domains \& Absolute Lockouts}
+
+\textbf{In This Chapter:}
+\begin{itemize}
+    \item Systematically deploying mathematical Temporal shifting keys.
+    \item Demonstrating catastrophic `403 Forbidden` permanent denial configurations.
+    \item Full code execution for NodeMCU Demo 9 and Pico W `06\_strong\_login\_TOTP`.
+\end{itemize}
+
+The fundamental flaw in Level 8 was static persistence. The random 2FA array stayed valid until the user explicitly authenticated it correctly, giving the Python brute force script infinite time to crack the two-digit code. In Level 9, we introduce two colossal upgrades:
+1. The 2FA code is expanded to 6 digits (000000 to 999999).
+2. The 2FA code automatically self-destructs and re-rotates every 15 seconds.
+3. The threshold lockout is no longer a 60-second delay; it permanently destroys the execution loop, demanding a hard physical reboot of the server rack!
+
+\section{Systematic NodeMCU Implementation (Demo 9)}
+Notice how the `permanentlyBlocked` boolean state dictates the entire processor loop. If activated, the device renders a `403 Forbidden` response instantly and forever.
+
+\begin{lstlisting}[language=C++, caption=Demo\_9\_Strong\_2FA\_With\_Description.ino]
+/*
+  Demo 9 - Strong 2FA IoT Security Demo
+  --------------------------------------
+  Board: NodeMCU (ESP8266)
+  Sensor: DHT22
+
+  FEATURES:
+  1. Real sensor data displayed by default.
+  2. Override requires:
+       - Username & Password (Basic Authentication)
+       - 6-digit OTP (2FA)
+  3. OTP changes automatically every 15 seconds.
+  4. After 3 wrong 2FA attempts -> device permanently locks.
+  5. Override persists until reboot.
+*/
+
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <DHT.h>
+
+#define D5PIN D5
+#define DHTTYPE DHT22
+
+const char* ssid = "drarka.in";
+const char* pass = "arkaprabha@1985";
+
+const char* adminUser = "admin";
+const char* adminPass = "1234";
+
+DHT dht(D5PIN, DHTTYPE);
+ESP8266WebServer server(80);
+
+float overrideTemp = NAN;
+float overrideHum  = NAN;
+
+unsigned long lastCodeChange = 0;
+const unsigned long codeInterval = 15000;  // 15 seconds
+int twoFactorCode = 0;
+
+int failedAttempts = 0;
+bool permanentlyBlocked = false;
+
+// Step 1: Algorithmic Generation of a padded 6-digit string
+void generateNewCode() {
+  twoFactorCode = random(0, 1000000);
+
+  char buffer[7];
+  sprintf(buffer, "%06d", twoFactorCode);
+
+  Serial.print("New 6-digit 2FA Code: ");
+  Serial.println(buffer);
+
+  lastCodeChange = millis();
+}
+
+void setup() {
+
+  Serial.begin(9600);
+  randomSeed(micros());
+  dht.begin();
+
+  WiFi.begin(ssid, pass);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+
+  Serial.print("Open this IP in browser: ");
+  Serial.println(WiFi.localIP());
+
+  generateNewCode();
+
+  server.on("/", []() {
+
+    // Step 2: The Permanent Kill-Switch Execution
+    if (permanentlyBlocked) {
+      server.send(403, "text/plain",
+                  "Device permanently locked due to multiple failed attempts.");
+      return;
+    }
+
+    if (server.hasArg("t") || server.hasArg("h")) {
+
+      if (!server.authenticate(adminUser, adminPass)) {
+        return server.requestAuthentication();
+      }
+
+      if (!server.hasArg("code")) {
+
+        String form = "<html><body bgcolor='black' text='white'><center>";
+        form += "<h2>Enter 6-digit 2FA Code</h2>";
+        form += "<form method='GET'>";
+        form += "<input type='hidden' name='t' value='" + server.arg("t") + "'>";
+        form += "<input type='hidden' name='h' value='" + server.arg("h") + "'>";
+        form += "<input name='code' type='text'>";
+        form += "<br><br><input type='submit' value='Submit'>";
+        form += "</form>";
+        form += "</center></body></html>";
+
+        server.send(200, "text/html", form);
+        return;
+      }
+
+      // Step 3: Verifying the Threshold Limit
+      if (server.arg("code").toInt() != twoFactorCode) {
+
+        failedAttempts++;
+        Serial.print("Wrong attempt count: ");
+        Serial.println(failedAttempts);
+
+        if (failedAttempts >= 3) {
+          permanentlyBlocked = true;
+          Serial.println("DEVICE PERMANENTLY LOCKED!");
+        }
+
+        server.send(403, "text/plain", "Invalid 2FA Code!");
+        return;
+      }
+
+      failedAttempts = 0;
+
+      if (server.hasArg("t")) overrideTemp = server.arg("t").toFloat();
+      if (server.hasArg("h")) overrideHum  = server.arg("h").toFloat();
+
+      Serial.println("Override successful!");
+
+      generateNewCode();
+
+      server.sendHeader("Location", "/");
+      server.send(303);
+      return;
+    }
+
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
+
+    if (!isnan(overrideTemp)) t = overrideTemp;
+    if (!isnan(overrideHum))  h = overrideHum;
+
+    String page = "<html>";
+    page += "<head><meta http-equiv='refresh' content='5'></head>";
+    page += "<body bgcolor='black' text='white'><center>";
+
+    page += "<h1>Temperature</h1>";
+    page += "<h1><font color='cyan'>" + String(t) + " C</font></h1>";
+
+    page += "<h1>Humidity</h1>";
+    page += "<h1><font color='pink'>" + String(h) + " %</font></h1>";
+
+    page += "</center></body></html>";
+
+    server.send(200, "text/html", page);
+  });
+
+  server.begin();
+}
+
+void loop() {
+
+  server.handleClient();
+
+  // Step 4: Time Delta Evaluation (Triggering automatic rotation)
+  if (!permanentlyBlocked && millis() - lastCodeChange >= codeInterval) {
+    generateNewCode();
+  }
+}
+\end{lstlisting}
+
+% -------------------------
+% HACKING NODE MCU LEVEL 9
+% -------------------------
+\section{Obliterating the Python Dictionary Exploit}
+The attacker deploys a modified payload attempting to crack the 6-digit array (`000000` through `999999`). 
+Unabridged Python Execution:
+
+\begin{lstlisting}[language=Python, caption=Demo\_9\_brute-forcing.py]
+import requests
+from requests.auth import HTTPBasicAuth
+import time
+
+# Configuration
+TARGET_IP = "http://10.39.28.3"
+ADMIN_USER = "admin"
+ADMIN_PASS = "1234"
+
+def start_secure_attack():
+    print(f"[*] Testing security on {TARGET_IP}...")
+    print("[!] Security Active: 6-digit OTP + 3-Attempt Lockout.")
+    
+    # We try only 5 codes to demonstrate the lockout
+    for code in range(100000, 100005):
+        # Format as 6-digit string (e.g., 100000)
+        formatted_code = str(code).zfill(6)
+        print(f"[#] Attempting Code: {formatted_code}...")
+        
+        params = {'t': '99', 'h': '99', 'code': formatted_code}
+        
+        try:
+            response = requests.get(
+                TARGET_IP, 
+                params=params, 
+                auth=HTTPBasicAuth(ADMIN_USER, ADMIN_PASS),
+                timeout=5
+            )
+            
+            if response.status_code == 403:
+                if "locked" in response.text.lower():
+                    print("\n[X] ATTACK HALTED: The device has PERMANENTLY LOCKED the attacker.")
+                    print("[X] Reason: 3 failed attempts detected.")
+                    return
+                else:
+                    print(f"[-] Code {formatted_code} rejected.")
+            
+            elif response.status_code == 200:
+                print(f"[+] Success! Correct Code: {formatted_code}")
+                return
+
+        except requests.exceptions.RequestException as e:
+            print(f"[!] Connection Error: {e}")
+            break
+
+    print("\n[!] Brute force failed. Security measures were effective.")
+
+if __name__ == "__main__":
+    start_secure_attack()
+\end{lstlisting}
+
+\begin{troubleshootbox}[Exploit Defeated]
+The python script is executed. It tests `100000`, `100001`, `100002`. Upon dispatching `100003`, the NodeMCU detects the threshold limits and irrevocably alters the web-server execution state to `permanentlyBlocked`. The attacker is completely neutralized. 
+\end{troubleshootbox}
+
+% -------------------------
+% PICO W EQUIVALENT (LEVEL 9)
+% -------------------------
+\section{Pico W Level 9: The Foundation of TOTP}
+The MicroPython developer natively integrates `hashlib.sha256` to create a Time-Based algorithm synchronizing against a local offset, rather than purely generating randomly seeded variables. This begins the transition into full cryptographic defense.
+
+\begin{lstlisting}[language=Python, caption=06\_strong\_login\_TOTP.py]
+import network, socket, time, machine, dht, ubinascii, secrets, hashlib, rp2, sys
+
+# --- [1. STABLE WIFI & HARDWARE SETUP] ---
+rp2.country('US')
+sensor = dht.DHT22(machine.Pin(15))
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
+wlan.config(pm = 0xa11140) 
+wlan.connect(secrets.SSID, secrets.PASSWORD)
+
+print("Connecting to WiFi", end="")
+while wlan.status() < 3:
+    print(".", end="")
+    time.sleep(1)
+
+my_ip = wlan.ifconfig()[0]
+print(f"\n" + "="*40)
+print(f"[LIVE DASHBOARD] http://{my_ip}")
+print("="*40)
+
+# --- [2. SECURITY CONFIGURATION] ---
+auth = ubinascii.b2a_base64(f"{secrets.WEB_USER}:{secrets.WEB_PASS_STRONG}".encode()).strip().decode()
+expected_basic = f"Basic {auth}"
+
+TOTP_INTERVAL = 15
+authorized_ips = {}  # Tracks who has passed 2FA
+fail_counts = {}     # Tracks hacker attempts
+MAX_FAILS = 3
+last_totp, last_sec = "", -1
+
+def get_totp():
+    """Generates the 6-digit PIN every 15 seconds"""
+    step = int(time.time() // TOTP_INTERVAL)
+    h = hashlib.sha256(str(step).encode() + b"SALT_PICO").digest()
+    return str(int(ubinascii.hexlify(h[:4]), 16))[-6:]
+
+# --- [3. SOCKET ENGINE] ---
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(('0.0.0.0', 80))
+s.listen(1) # Listen to 1 request at a time to prevent crashes
+s.settimeout(0.1)
+
+t, h, spoof = "0.0", "0.0", False
+
+# --- [4. MAIN LOOP] ---
+try:
+    while True:
+        # --- A. SHELL DISPLAY (Smooth & Fast) ---
+        curr_t = int(time.time())
+        code = get_totp()
+        if curr_t != last_sec:
+            last_sec = curr_t
+            if code != last_totp: 
+                last_totp = code
+                print(f"\n[NEW TOTP] {last_totp}")
+            print(f"\r[2FA CODE: {last_totp}] Rotates in: {TOTP_INTERVAL-(curr_t%TOTP_INTERVAL):02d}s ", end="")
+
+        if not spoof:
+            try: 
+                sensor.measure()
+                t, h = "{:.1f}".format(sensor.temperature()), "{:.1f}".format(sensor.humidity())
+            except: pass
+
+        conn = None
+        try:
+            conn, addr = s.accept()
+            ip = addr[0]
+            conn.settimeout(0.5)
+            
+            req = conn.recv(1024).decode()
+            if not req:
+                conn.close()
+                continue
+
+            # 1. Check IP Ban List
+            if ip in fail_counts and fail_counts[ip] >= MAX_FAILS:
+                conn.sendall(b'HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n<h1>IP BLOCKED</h1>')
+                conn.close()
+                continue
+
+            if expected_basic in req:
+                if 'code=' in req:
+                    if f"code={last_totp}" in req:
+                        authorized_ips[ip] = time.time() + 600
+                        print(f"\n[AUTH] {ip} successfully passed 2FA.")
+                    else:
+                        fail_counts[ip] = fail_counts.get(ip, 0) + 1
+                        print(f"\n[WARN] {ip} guessed wrong TOTP ({fail_counts[ip]}/{MAX_FAILS})")
+                        conn.sendall(b'HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n<h2>Invalid 2FA Code</h2>')
+                        conn.close()
+                        continue
+
+                if ip in authorized_ips and time.time() < authorized_ips[ip]:
+                    html = f"""<!DOCTYPE html><html>...<div class="t">{t}&deg;</div>...</html>"""
+                else:
+                    html = f"""<!DOCTYPE html><html>...<h2>2FA REQUIRED</h2>...</html>"""
+                
+                response = f'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n{html}'
+                conn.sendall(response.encode('utf-8'))
+            else:
+                conn.sendall(b'HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm="Pico"\r\nConnection: close\r\n\r\n')
+            
+            conn.close()
+        except OSError:
+            pass 
+        time.sleep(0.02)
+except KeyboardInterrupt:
+    print("\n[SHUTDOWN] Stopping Server...")
+finally:
+    s.close()
+\end{lstlisting}

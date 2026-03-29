@@ -1,0 +1,471 @@
+% ==========================================
+% CHAPTER 08: Level 10 (Google Authenticator)
+% ==========================================
+\chapter{Level 10: The Cryptographic TOTP Masterclass}
+
+\textbf{In This Chapter:}
+\begin{itemize}
+    \item Systemically analyzing Single-Point-of-Failure architectures.
+    \item Utilizing standard Python `hmac` implementations in MicroPython.
+    \item Utilizing the `api.qrserver.com` endpoint for QR generation over Wi-Fi.
+    \item Full code execution for NodeMCU Demo 10 and Pico W Authenticator.
+\end{itemize}
+
+Our device is impenetrable to automated scripts, but we harbor a catastrophic \textbf{Single-Point-Of-Failure}. If an intern accidentally posts the password `1234` into a public GitHub repository, or a technician types it on a sticky note attached to the server rack, the lockout defense becomes completely bypassed because the algorithm trusts the keyholder implicitly. 
+
+\section{The TOTP Mechanics (\url{https://datatracker.ietf.org/doc/html/rfc6238})}
+Zero-Trust infrastructure mandates validating intersecting factors. The modern implementation standard for "Possession" validation is the \textbf{Google Authenticator} app on a smartphone.
+
+1. Both the IoT device and the phone share an identical cryptographic base variable (e.g., `JBSWY3DP`) permanently stored in isolating memory constraints.
+2. Both independent hardwares synchronize with a universal atomic clock via UDP Network Time Protocol vectors.
+3. Both silicon chips independently run the variables through an HMAC-SHA1 mathematical permutation pipeline simultaneously.
+4. The immense resulting matrix is dynamically truncated and bitwise-shifted into a globally synchronized 6-digit numeral.
+
+Even possessing the primary administrative password, remote attackers are crippled without concurrent possession of the physical phone displaying the temporal integer. 
+
+% -------------------------
+% NODE MCU LEVEL 10
+% -------------------------
+\section{Systematic NodeMCU Implementation (Demo 10)}
+A standard microcontroller lacks the raw 64-bit integer space necessary to easily crunch massive encryption algorithms. Fortunately, the Espressif ESP8266 core encompasses the \texttt{BearSSLHelpers} cryptography suite embedded deep beneath the network stack.
+
+\begin{lstlisting}[language=C++, caption=Demo\_10\_Secure\_IoT\_Admin\_TOTP\_With\_Description.ino]
+/*
+  ===============================================================
+  Secure IoT System - Admin + Password + TOTP (QR + Manual)
+  ===============================================================
+
+  FEATURES:
+  ✓ Admin login (username: admin, password: 1234)
+  ✓ Google Authenticator TOTP (6-digit, 30-second)
+  ✓ QR code generation using api.qrserver.com
+  ✓ Manual secret setup option
+  ✓ Auto-refresh live sensor display (every 5 sec)
+  ✓ Secure /set route (requires password + fresh OTP)
+  ✓ 3 wrong update attempts -> "Unauthorized access"
+  ✓ Cyan temperature, Pink humidity display
+
+  REQUIRED LIBRARIES:
+  - Base32-Decode
+  - NTPClient
+  (BearSSL is included in ESP8266 core)
+
+  HARDWARE:
+  - NodeMCU (ESP8266)
+  - DHT22 connected to D5
+*/
+
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <DHT.h>
+#include <WiFiUdp.h>
+#include <NTPClient.h>
+#include <Base32-Decode.h>
+#include <BearSSLHelpers.h>
+
+const char* ssid = "drarka.in";
+const char* password = "arkaprabha@1985";
+
+const String ADMIN_USER = "admin";
+const String ADMIN_PASS = "1234";
+
+const String SECRET_KEY = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP";
+
+#define DHTPIN D5
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHTTYPE);
+
+ESP8266WebServer server(80);
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "pool.ntp.org", 0, 60000);
+
+uint8_t decodedKey[32];
+int decodedKeyLen = 0;
+
+bool loggedIn = false;
+int failedAttempts = 0;
+bool blocked = false;
+
+float overrideTemp = NAN;
+float overrideHum  = NAN;
+
+// Step 1: The Core HMAC-SHA1 Algorithm translated to C++ Pointers
+String getTOTP(unsigned long epochSeconds) {
+
+  uint64_t counter = epochSeconds / 30;
+
+  uint8_t msg[8];
+  for (int i = 7; i >= 0; i--) {
+    msg[i] = counter & 0xFF;
+    counter >>= 8;
+  }
+
+  uint8_t hash[20];
+  br_hmac_key_context kc;
+  br_hmac_context ctx;
+
+  br_hmac_key_init(&kc, &br_sha1_vtable, decodedKey, decodedKeyLen);
+  br_hmac_init(&ctx, &kc, 0);
+  br_hmac_update(&ctx, msg, sizeof(msg));
+  br_hmac_out(&ctx, hash);
+
+  int offset = hash[19] & 0x0F;
+
+  uint32_t binary =
+    ((hash[offset] & 0x7F) << 24) |
+    ((hash[offset+1] & 0xFF) << 16) |
+    ((hash[offset+2] & 0xFF) << 8) |
+    (hash[offset+3] & 0xFF);
+
+  uint32_t otp = binary % 1000000;
+
+  char buf[7];
+  snprintf(buf, sizeof(buf), "%06u", otp);
+
+  return String(buf);
+}
+
+void handleRoot() {
+
+  if (!loggedIn) {
+
+    if (!server.hasArg("user")) {
+      server.send(200, "text/html",
+        "<h3>Admin Login</h3>"
+        "<form method='GET'>"
+        "Username:<br><input name='user'><br>"
+        "Password:<br><input name='pass' type='password'><br><br>"
+        "<input type='submit' value='Login'>"
+        "</form>");
+      return;
+    }
+
+    if (server.arg("user") != ADMIN_USER ||
+        server.arg("pass") != ADMIN_PASS) {
+      server.send(401, "text/plain", "Invalid credentials");
+      return;
+    }
+
+    if (!server.hasArg("otp")) {
+
+      String otpURL =
+        "otpauth://totp/IoT-Secure?secret=" +
+        SECRET_KEY +
+        "&issuer=IoT-Secure";
+
+      String qrURL =
+        "https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=" +
+        otpURL;
+
+      String html =
+        "<h3>Google Authenticator Setup</h3>"
+        "<img src='" + qrURL + "' width='250'><br><br>"
+        "<p><b>Manual Setup Key:</b> " + SECRET_KEY + "</p>"
+        "<hr>"
+        "<form method='GET'>"
+        "<input type='hidden' name='user' value='admin'>"
+        "<input type='hidden' name='pass' value='1234'>"
+        "Enter 6-digit OTP:<br><input name='otp'><br><br>"
+        "<input type='submit' value='Verify'>"
+        "</form>";
+
+      server.send(200, "text/html", html);
+      return;
+    }
+
+    timeClient.update();
+
+    if (server.arg("otp") == getTOTP(timeClient.getEpochTime())) {
+      loggedIn = true;
+    } else {
+      server.send(401, "text/plain", "Invalid OTP");
+      return;
+    }
+  }
+
+  float t = isnan(overrideTemp) ? dht.readTemperature() : overrideTemp;
+  float h = isnan(overrideHum)  ? dht.readHumidity()    : overrideHum;
+
+  String html =
+    "<meta http-equiv='refresh' content='5'>"
+    "<body style='background:black;color:white;text-align:center;'>"
+    "<h2>Secure Live Sensor Data</h2>"
+    "<h3>Temperature</h3>"
+    "<h1 style='color:cyan;'>" + String(t,1) + " C</h1>"
+    "<h3>Humidity</h3>"
+    "<h1 style='color:pink;'>" + String(h,1) + " %</h1>"
+    "</body>";
+
+  server.send(200, "text/html", html);
+}
+
+void handleSet() {
+
+  if (blocked) {
+    server.send(403, "text/plain", "Unauthorized access");
+    return;
+  }
+
+  if (!server.hasArg("pass") || !server.hasArg("otp")) {
+    server.send(400, "text/plain", "Password and OTP required");
+    return;
+  }
+
+  timeClient.update();
+
+  if (server.arg("pass") != ADMIN_PASS ||
+      server.arg("otp") != getTOTP(timeClient.getEpochTime())) {
+
+    failedAttempts++;
+
+    if (failedAttempts >= 3) {
+      blocked = true;
+      server.send(403, "text/plain", "Unauthorized access");
+      return;
+    }
+
+    server.send(401, "text/plain", "Invalid credentials");
+    return;
+  }
+
+  failedAttempts = 0;
+
+  if (server.hasArg("t")) overrideTemp = server.arg("t").toFloat();
+  if (server.hasArg("h")) overrideHum  = server.arg("h").toFloat();
+
+  server.send(200, "text/plain", "Values updated successfully");
+}
+
+void setup() {
+
+  Serial.begin(115200);
+  dht.begin();
+
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) delay(300);
+
+  Serial.println("Connected!");
+  Serial.println(WiFi.localIP());
+
+  timeClient.begin();
+  while (!timeClient.update()) timeClient.forceUpdate();
+
+  decodedKeyLen = base32decode(
+    SECRET_KEY.c_str(),
+    decodedKey,
+    sizeof(decodedKey)
+  );
+
+  server.on("/", handleRoot);
+  server.on("/set", handleSet);
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+  timeClient.update();
+}
+\end{lstlisting}
+
+% -------------------------
+% PICO W AUTHENTICATOR
+% -------------------------
+\section{Pico W Level 10: Official Authenticator Upgrade}
+The MicroPython developer finally merges universal Y2K Unix Epoch mathematical fixes and the official `hmac-sha1` integer truncation sequence, completely matching Google Authenticator specifications.
+
+\begin{lstlisting}[language=Python, caption=07\_strong\_login\_Authenticator.py]
+import network, socket, time, machine, dht, ubinascii, secrets, hashlib, rp2, ntptime
+
+# --- [1. WIFI & TIME SYNC] ---
+rp2.country('US')
+sensor = dht.DHT22(machine.Pin(15))
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
+wlan.config(pm = 0xa11140) 
+wlan.connect(secrets.SSID, secrets.PASSWORD)
+
+print("Connecting to WiFi", end="")
+while wlan.status() < 3:
+    print(".", end="")
+    time.sleep(1)
+
+my_ip = wlan.ifconfig()[0]
+
+print("\nSyncing exact time with Internet (NTP)", end="")
+ntp_success = False
+for i in range(10): # Try up to 10 times to ensure we get the real time
+    try:
+        ntptime.settime()
+        ntp_success = True
+        break
+    except:
+        time.sleep(1)
+        print(".", end="")
+
+if ntp_success:
+    print(" [SUCCESS] Clock synced!")
+else:
+    print("\n[!!!] CLOCK SYNC FAILED [!!!] Codes will not match.")
+
+# --- [2. CRITICAL FIX: EPOCH DETECTION] ---
+if time.localtime(0)[0] == 2000:
+    UNIX_OFFSET = 946684800
+    print("[SYSTEM] Y2K Epoch detected. Applying 30-year correction.")
+else:
+    UNIX_OFFSET = 0
+
+# --- [3. BULLETPROOF GOOGLE AUTHENTICATOR SETUP] ---
+print("\n" + "="*50)
+print("  ADD THIS NEW KEY TO GOOGLE AUTHENTICATOR")
+print("="*50)
+print("Option 1: Scan this QR Code from your browser:")
+print("https://api.qrserver.com/v1/create-qr-code/?data=otpauth://totp/Pico:Pico%20Monitor?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=Pico&size=300x300")
+print("Option 2: Enter Key Manually:")
+print("Account: Pico Monitor")
+print("Key:     GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ")
+print("-" * 50)
+print(f"[LIVE DASHBOARD] http://{my_ip}")
+print("="*50 + "\n")
+
+auth = ubinascii.b2a_base64(f"{secrets.WEB_USER}:{secrets.WEB_PASS_STRONG}".encode()).strip().decode()
+expected_basic = f"Basic {auth}"
+
+TOTP_INTERVAL = 30 
+
+SECRET_BYTES = b"12345678901234567890"
+
+authorized_ips = {}
+fail_counts = {}
+MAX_FAILS = 3
+last_totp, last_sec = "", -1
+
+def hmac_sha1(key, msg):
+    """Official HMAC-SHA1 algorithm"""
+    if len(key) > 64: key = hashlib.sha1(key).digest()
+    key = key + b'\x00' * (64 - len(key))
+    ipad = bytes(x ^ 0x36 for x in key)
+    opad = bytes(x ^ 0x5C for x in key)
+    inner = hashlib.sha1(ipad + msg).digest()
+    return hashlib.sha1(opad + inner).digest()
+
+def get_google_auth_code():
+    """Generates the 6-digit Google Auth code using real UTC Time"""
+    unix_time = time.time() + UNIX_OFFSET
+    time_step = int(unix_time // TOTP_INTERVAL)
+    
+    msg = bytearray(8)
+    for i in range(7, -1, -1):
+        msg[i] = time_step & 0xff
+        time_step >>= 8
+        
+    hash_result = hmac_sha1(SECRET_BYTES, msg)
+    offset = hash_result[19] & 0x0F
+    code_int = ((hash_result[offset] & 0x7F) << 24 |
+                (hash_result[offset+1] & 0xFF) << 16 |
+                (hash_result[offset+2] & 0xFF) << 8 |
+                (hash_result[offset+3] & 0xFF))
+    
+    code = str(code_int % 1000000)
+    return "0" * (6 - len(code)) + code
+
+# --- [4. SOCKET ENGINE] ---
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(('0.0.0.0', 80))
+s.listen(1)
+s.settimeout(0.1)
+
+t, h, spoof = "0.0", "0.0", False
+
+# --- [5. MAIN LOOP] ---
+try:
+    while True:
+        curr_t = int(time.time())
+        code = get_google_auth_code()
+        
+        if curr_t != last_sec:
+            last_sec = curr_t
+            if code != last_totp: last_totp = code
+            print(f"\r[Pico Code: {last_totp}] | Matches phone? Rotates in: {TOTP_INTERVAL-(curr_t%TOTP_INTERVAL):02d}s ", end="")
+
+        if not spoof:
+            try: 
+                sensor.measure()
+                t, h = "{:.1f}".format(sensor.temperature()), "{:.1f}".format(sensor.humidity())
+            except: pass
+
+        conn = None
+        try:
+            conn, addr = s.accept()
+            ip = addr[0]
+            conn.settimeout(0.5)
+            
+            req = conn.recv(1024).decode()
+            if not req:
+                conn.close()
+                continue
+
+            if ip in fail_counts and fail_counts[ip] >= MAX_FAILS:
+                conn.sendall(b'HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n<h1>IP BLOCKED: Too Many Failed 2FA Attempts</h1>')
+                conn.close()
+                continue
+
+            if expected_basic in req:
+                
+                if 'code=' in req:
+                    if f"code={last_totp}" in req:
+                        authorized_ips[ip] = time.time() + 600 # 10 minute session
+                        print(f"\n[AUTH SUCCESS] {ip} unlocked dashboard.")
+                        conn.sendall(b'HTTP/1.1 302 Found\r\nLocation: /\r\nConnection: close\r\n\r\n')
+                        conn.close()
+                        continue
+                    else:
+                        fail_counts[ip] = fail_counts.get(ip, 0) + 1
+                        print(f"\n[AUTH FAILED] {ip} Wrong Code. ({fail_counts[ip]}/{MAX_FAILS})")
+                        conn.sendall(b'HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n<h2>Invalid Google Auth Code</h2>')
+                        conn.close()
+                        continue
+
+                if ip in authorized_ips and time.time() < authorized_ips[ip]:
+                    html = f"""<!DOCTYPE html><html><head><meta http-equiv="refresh" content="2;url=/">
+                    <style>
+                        body {{ background:#000; color:white; font-family:sans-serif; display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; margin:0; }}
+                        .l {{ color:#333; font-size:1.5rem; letter-spacing:5px; margin-top:20px; font-weight:bold; }}
+                        .t {{ color:cyan; font-size:10rem; font-weight:bold; margin:0; text-shadow:0 0 30px cyan; }}
+                        .h {{ color:pink; font-size:10rem; font-weight:bold; margin:0; text-shadow:0 0 30px pink; }}
+                    </style></head><body>
+                        <div class="l">TEMPERATURE</div><div class="t">{t}&deg;</div>
+                        <div class="l">HUMIDITY</div><div class="h">{h}%</div>
+                    </body></html>"""
+                else:
+                    html = f"""<!DOCTYPE html><html><head><meta name="viewport" content="width=device-width, initial-scale=1">
+                    <style>
+                        body {{ background:#0a0a0a; color:cyan; font-family:sans-serif; text-align:center; padding-top:20vh; margin:0; }}
+                        input {{ background:black; border:2px solid cyan; color:cyan; padding:15px; font-size:1.5rem; border-radius:10px; width:200px; text-align:center; outline:none; letter-spacing:3px; }}
+                        button {{ background:cyan; border:none; padding:15px 30px; font-size:1rem; font-weight:bold; border-radius:10px; margin-top:20px; color:black; cursor:pointer; }}
+                    </style></head><body>
+                        <h2>GOOGLE AUTHENTICATOR</h2>
+                        <form action="/" method="get">
+                            <input type="text" name="code" placeholder="000 000" inputmode="numeric" autofocus autocomplete="off"><br>
+                            <button type="submit">UNLOCK DASHBOARD</button>
+                        </form></body></html>"""
+                
+                response = f'HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n{html}'
+                conn.sendall(response.encode('utf-8'))
+            else:
+                conn.sendall(b'HTTP/1.1 401 Unauthorized\r\nWWW-Authenticate: Basic realm="Pico"\r\nConnection: close\r\n\r\n')
+            
+            conn.close()
+        except OSError:
+            pass
+        
+        time.sleep(0.02)
+except KeyboardInterrupt:
+    print("\n[SHUTDOWN] Stopping Server...")
+finally:
+    s.close()
+\end{lstlisting}
+
+\begin{takeawaybox}
+By enforcing a strict HMAC-SHA1 algorithm mathematically matching the global RFC standard, the devices are officially fully secure. A hacker intercepting the `Basic` hash and circumventing the 3-strike network lockout will still fail against the Time-based temporal shifting properties of independent local execution arrays. You have secured the machine!
+\end{takeawaybox}

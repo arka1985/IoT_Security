@@ -1,0 +1,123 @@
+\documentclass[11pt,a4paper]{book}
+
+% ==========================================
+% PACKAGES
+% ==========================================
+\usepackage[utf8]{inputenc}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{tcolorbox}
+\usepackage{graphicx}
+\usepackage[hidelinks, colorlinks=true, linkcolor=primary, urlcolor=secondary]{hyperref}
+\usepackage{geometry}
+\geometry{a4paper, margin=1in}
+\usepackage{courier}
+\usepackage{titlesec} 
+\usepackage{parskip}
+\usepackage{tikz}
+\usetikzlibrary{shapes.geometric, arrows, positioning}
+
+% ==========================================
+% COLOR DEFINITIONS & STYLES
+% ==========================================
+\definecolor{primary}{HTML}{2B5B84}    
+\definecolor{secondary}{HTML}{D96459}  
+\definecolor{accent}{HTML}{F2AE72}     
+\definecolor{darkbg}{HTML}{212121}     
+\definecolor{backcolour}{rgb}{0.96,0.96,0.96}
+
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\color{primary}}
+  {\filleft\Huge\chaptertitlename~\thechapter}
+  {1ex}
+  {\titlerule\vspace{1ex}\filleft\Huge}
+  [\vspace{1ex}\titlerule]
+
+\titleformat{\section}
+  {\normalfont\Large\bfseries\color{secondary}}
+  {\thesection}{1em}{}
+
+\titleformat{\subsection}
+  {\normalfont\large\bfseries\color{accent}}
+  {\thesubsection}{1em}{}
+
+% Custom Boxes for "Real Book" Feel
+\newtcolorbox{conceptbox}[1][Core Concept]{
+    colback=accent!10!white, colframe=accent, fonttitle=\bfseries, title=#1, boxsep=2mm, arc=4mm
+}
+\newtcolorbox{troubleshootbox}[1][Troubleshooting Guide]{
+    colback=secondary!10!white, colframe=secondary, fonttitle=\bfseries, title=#1, boxsep=2mm, arc=4mm
+}
+\newtcolorbox{takeawaybox}[1][Chapter Review]{
+    colback=primary!10!white, colframe=primary, fonttitle=\bfseries, title=#1, boxsep=2mm, arc=4mm
+}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{green!50!black}\itshape,
+    keywordstyle=\color{blue}\bfseries,
+    numberstyle=\tiny\color{gray},
+    stringstyle=\color{purple},
+    basicstyle=\ttfamily\small,
+    breaklines=true,                 
+    numbers=left,                    
+    frame=shadowbox
+}
+\lstset{style=mystyle}
+
+% TIKZ STYLING
+\tikzstyle{device} = [rectangle, rounded corners, minimum width=3cm, minimum height=1cm,text centered, draw=black, fill=primary!30]
+\tikzstyle{hacker} = [rectangle, rounded corners, minimum width=3cm, minimum height=1cm,text centered, draw=black, fill=secondary!30]
+\tikzstyle{arrow} = [thick,->,>=stealth]
+
+% ==========================================
+% FRONT MATTER
+% ==========================================
+\title{
+    \vspace{2cm}
+    \Huge \textcolor{primary}{\textbf{IoT Cybersecurity Masterclass}}\\
+    \vspace{0.5cm}
+    \LARGE \textcolor{secondary}{\textit{From Vulnerable Bare Metal to Cryptographic Defense}}
+    \vspace{2cm}
+}
+\author{
+\Large \textcolor{darkbg}{\textbf{
+Dr.\ Arkaprabha Sau \\[0.3cm]
+Dr.\ Ishita Bhakta \\[0.3cm]
+Dr.\ Santanu Phadikar \\[0.3cm]
+Dr.\ Koushik Majumder
+}}
+}
+
+\date{
+\vspace{1cm}
+\textbf{Draft Version} \\[0.3cm]
+\textit{Final Book Coming Soon} \\[0.5cm]
+Expected Publication: XXXXX \\[0.5cm]
+\textcolor{darkbg}{ISBN: 978-X-XXXXXX-XX-X}
+}
+
+\begin{document}
+\maketitle
+
+\chapter*{Preface}
+\addcontentsline{toc}{chapter}{Preface}
+Welcome to the \textbf{IoT Cybersecurity Masterclass}. This massive textbook is designed heavily for educational purposes. To prevent truncations, this book incorporates the \textbf{UNABRIDGED} source code for every single demo level (1 through 10) provided in the accompanying course files. 
+
+By the time you finish the final level, you will intricately understand how data traverses a Wi-Fi socket, how HTTP Basic Authentication is constructed on the wire, how algorithmic Python brute-forcing exploits deterministic protocols, and how cryptographic HMAC-SHA1 mathematics generate Time-Based One-Time Passwords (TOTP) natively on bare metal.
+
+\tableofcontents
+
+% ==========================================
+% MODULAR CHAPTER INCLUSIONS
+% ==========================================
+\input{Chapter_01_Theory_Hardware.tex}
+\input{Chapter_02_Level_1_to_3.tex}
+\input{Chapter_03_Level_4_to_5.tex}
+\input{Chapter_04_Level_6_Injection.tex}
+\input{Chapter_05_Level_7_BasicAuth.tex}
+\input{Chapter_06_Level_8_Lockouts.tex}
+\input{Chapter_07_Level_9_Delays.tex}
+\input{Chapter_08_Level_10_TOTP.tex}
+
+\end{document}

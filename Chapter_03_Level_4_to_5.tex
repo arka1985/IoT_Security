@@ -1,0 +1,193 @@
+% ==========================================
+% CHAPTER 03: Levels 4 and 5 (Intermediate NodeMCU)
+% ==========================================
+\chapter{Level 4 \& 5: Rudimentary Obfuscation (NodeMCU)}
+
+\textbf{In This Chapter:}
+\begin{itemize}
+    \item Level 4: Initializing the native \texttt{server.authenticate} module.
+    \item Level 5: Exploring basic bitwise XOR logic for telemetry obfuscation.
+\end{itemize}
+
+Prior to analyzing how hackers natively slice HTTP request queries, we will examine two intermediate iterations of the NodeMCU framework (Levels 4 and 5) that attempted to inject primary security via rudimentary code modifications. 
+
+\section{Level 4: The First Password}
+In Level 4, the developer decides to stop the public nature of the device by utilizing the built-in \texttt{authenticate} function of the C++ header.
+
+\subsection{NodeMCU Implementation (Level 4)}
+This is the unabridged iteration of Level 4. Notice the boolean structure around line 49.
+
+\begin{lstlisting}[language=C++, caption=23022026\_Level\_4\_Password.ino]
+/*
+  NodeMCU (ESP8266) + DHT22 Secure WiFi Monitor
+  ---------------------------------------------
+  What this program does:
+  1. Connects NodeMCU to your WiFi network
+  2. Reads Temperature and Humidity from DHT22 sensor (connected to D5)
+  3. Creates a password-protected webpage
+  4. Shows values in Cyan (Temperature) and Pink (Humidity)
+  5. Automatically refreshes every 5 seconds
+  6. Only users with correct username and password can view data
+*/
+
+#include <ESP8266WiFi.h>        // Library for WiFi connection
+#include <ESP8266WebServer.h>   // Library to create web server
+#include <DHT.h>                // Library to use DHT sensor
+
+#define D5PIN D5               // Define D5 pin for DHT22 data
+
+// ----------- WiFi Credentials -----------
+const char* ssid = "YOUR_WIFI";
+const char* pass = "YOUR_WIFI_PASSWORD";
+
+// ----------- Web Login Credentials -----------
+const char* www_username = "admin";   // Change username if needed
+const char* www_password = "1234";    // Change password if needed
+
+DHT dht(D5PIN, DHT22);          // Create DHT object (Pin, Sensor type)
+ESP8266WebServer server(80);    // Create web server on port 80
+
+void setup() {
+  Serial.begin(9600);           // Start serial communication (to show IP)
+  dht.begin();                  // Start DHT sensor
+
+  WiFi.begin(ssid, pass);       // Start connecting to WiFi
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);                 // Wait until WiFi connects
+  }
+
+  Serial.println("Connected to WiFi");
+  Serial.print("Open this IP in browser: ");
+  Serial.println(WiFi.localIP());   // Print IP address
+
+  // When someone opens the IP address
+  server.on("/", []() {
+
+    // ---- Authentication Check ----
+    // If username/password incorrect, ask for login
+    if (!server.authenticate(www_username, www_password)) {
+      return server.requestAuthentication();
+    }
+
+    float t = dht.readTemperature();   // Read temperature
+    float h = dht.readHumidity();      // Read humidity
+
+    // ---- Create Simple HTML Page ----
+    String page = "<html>";
+    page += "<head>";
+    page += "<meta http-equiv='refresh' content='5'>";  // Auto refresh every 5 sec
+    page += "</head>";
+    page += "<body bgcolor='black' text='white'>";
+    page += "<center>";
+
+    page += "<h1>Temperature</h1>";
+    page += "<h1><font color='cyan'>" + String(t) + " C</font></h1>";
+
+    page += "<h1>Humidity</h1>";
+    page += "<h1><font color='pink'>" + String(h) + " %</font></h1>";
+
+    page += "</center>";
+    page += "</body>";
+    page += "</html>";
+
+    server.send(200, "text/html", page);  // Send webpage to browser
+  });
+
+  server.begin();   // Start the web server
+}
+
+void loop() {
+  server.handleClient();   // Continuously handle browser requests
+}
+\end{lstlisting}
+
+\section{Level 5: Encryption-Only Monitor}
+Level 5 is an educational iteration demonstrating how physical microcontrollers process mathematics. The developer uses an XOR (Exclusive OR) logical bitwise operator (`^`) to mathematically mutate the temperature metric before it flies over the Wi-Fi. 
+
+The HTML JavaScript then executes the same reverse XOR operation natively inside the Chrome engine using the shared integer `123`.
+
+\subsection{NodeMCU Implementation (Level 5)}
+\begin{lstlisting}[language=C++, caption=23022026\_Level\_5\_Encryption.ino]
+/*
+  NodeMCU (ESP8266) + DHT22
+  Encryption-Only WiFi Monitor
+  --------------------------------
+  What this program does:
+  1. Connects NodeMCU to WiFi
+  2. Reads Temperature & Humidity from DHT22 (D5)
+  3. Encrypts values using XOR with a secret key
+  4. Sends encrypted values to browser
+  5. Browser decrypts and displays real values
+  6. Auto refresh every 5 seconds
+
+  NOTE:
+  This is educational encryption only (not HTTPS).
+*/
+
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <DHT.h>
+
+#define D5PIN D5
+
+// Replace with your WiFi credentials
+const char* ssid = "YOUR_WIFI";
+const char* pass = "YOUR_PASSWORD";
+
+DHT dht(D5PIN, DHT22);
+ESP8266WebServer server(80);
+
+int secretKey = 123;   // Encryption key (change if needed)
+
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+
+  WiFi.begin(ssid, pass);
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+
+  Serial.print("Open this IP in browser: ");
+  Serial.println(WiFi.localIP());
+
+  server.on("/", []() {
+
+    float t = dht.readTemperature();   // Read temperature
+    float h = dht.readHumidity();      // Read humidity
+
+    // Encrypt values (multiply by 10 to preserve decimal)
+    int encT = ((int)(t * 10)) ^ secretKey;
+    int encH = ((int)(h * 10)) ^ secretKey;
+
+    String page = "<html><head>";
+    page += "<meta http-equiv='refresh' content='5'>";
+    page += "</head><body bgcolor='black' text='white'><center>";
+
+    page += "<h1>Encrypted Sensor Monitor</h1>";
+
+    // JavaScript decrypts values in browser
+    page += "<script>";
+    page += "var key=" + String(secretKey) + ";";
+    page += "var t=(" + String(encT) + "^key)/10;";
+    page += "var h=(" + String(encH) + "^key)/10;";
+    page += "document.write('<h1 style=\"color:cyan\">'+t+' C</h1>');";
+    page += "document.write('<h1 style=\"color:pink\">'+h+' %</h1>');";
+    page += "</script>";
+
+    page += "</center></body></html>";
+
+    server.send(200, "text/html", page);
+  });
+
+  server.begin();
+}
+
+void loop() {
+  server.handleClient();
+}
+\end{lstlisting}
+
+\begin{takeawaybox}
+While Level 5 demonstrates symmetric logic, transmitting the mathematical decryption key natively inside the HTML payload (\texttt{var key=123}) completely nullifies the security. Modern systems rely on TLS certificates (HTTPS) explicitly computed via extreme mathematics to generate secure tunnels, not mere XOR obfuscation. Let's move to Level 6 to explore how injection bypasses authentication entirely.
+\end{takeawaybox}

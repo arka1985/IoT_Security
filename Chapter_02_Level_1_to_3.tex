@@ -1,0 +1,256 @@
+% ==========================================
+% CHAPTER 4: Level 1 and 2
+% ==========================================
+\chapter{Level 1 \& 2: The Foundational Baseline}
+
+\textbf{In This Chapter:}
+\begin{itemize}
+    \item Level 1: Systematically deploying the DHT22 Environment Sensor in offline serial mode.
+    \item Level 2/3: Constructing the primary Web Server framework to broadcast over Wi-Fi.
+    \item Unabridged execution of the foundational code blocks.
+\end{itemize}
+
+Before we can implement cybersecurity, we must build a system worth securing. Our journey begins by constructing the physical edge device. We interface a \textbf{DHT22 Sensor} (Temperature and Humidity) to our microcontrollers using a single data pin. We will start completely offline, and then systematically bring the device online.
+
+\section{Level 1: Offline Local Telemetry}
+The very first step of any IoT project is ensuring the hardware physically functions before attaching network layers. We will command the microcontrollers to poll the DHT22 sensor every two seconds and print the data explicitly to the Serial Monitor via the physical USB cable. 
+
+\subsection{NodeMCU Implementation (Level 1)}
+The following is the 100\% complete, unabridged source code for the \texttt{NodeMCU Level 1} deployment snippet provided in the workspace repository.
+
+\begin{lstlisting}[language=C++, caption=23022026\_Level\_1\_dht\_22\_Only\_Read\_Level\_1.ino]
+#include <DHT.h>
+
+#define DHTPIN D5
+#define DHTTYPE DHT22
+
+DHT dht(DHTPIN, DHTTYPE);
+
+void setup() {
+  Serial.begin(9600);
+  dht.begin();
+}
+
+void loop() {
+  Serial.print("Temp: ");
+  Serial.print(dht.readTemperature());
+  Serial.print(" C  Hum: ");
+  Serial.print(dht.readHumidity());
+  Serial.println(" %");
+  delay(2000);
+}
+\end{lstlisting}
+
+\subsection{Pico W Implementation (Level 1)}
+The MicroPython equivalent relies on the native \texttt{dht} and \texttt{machine} libraries to execute the exact same offline logic. 
+
+\begin{lstlisting}[language=Python, caption=01\_offline\_mode.py]
+import machine
+import time
+import dht
+
+# Pin where DHT22 DATA is connected
+sensor = dht.DHT22(machine.Pin(15))
+
+print("DHT22 Simple Serial Demo Started")
+
+while True:
+    try:
+        sensor.measure()
+        temp = sensor.temperature()
+        hum = sensor.humidity()
+
+        print("Temperature:", temp, "°C")
+        print("Humidity:", hum, "%")
+        print("---------------------")
+
+    except:
+        print("Sensor Error")
+
+    time.sleep(2)
+\end{lstlisting}
+
+\section{Level 2 \& 3: Read-Only Wi-Fi Broadcasting}
+Now that the bare-metal hardware functions, we must bring the devices onto the Wi-Fi network. In this tier, we are constructing a \textbf{Read-Only UI}. The device will host an HTML web page on Port 80, displaying the sensor metrics to any browser that navigating to it. 
+
+Notice there are no input parameters mapped; the device merely functions as an arrogant broadcaster. 
+
+\subsection{NodeMCU Implementation (Level 2)}
+This is the unabridged C++ execution utilizing the foundational \texttt{ESP8266WebServer} library to abstract socket complexities cleanly. 
+
+\begin{lstlisting}[language=C++, caption=23022026\_Level\_2\_DHT22\_WiFi\_LargeText\_With\_Description.ino]
+/*
+  NodeMCU (ESP8266) + DHT22 Web Server
+  ------------------------------------
+  - Connects to WiFi
+  - Reads Temperature & Humidity from DHT22 (connected to D5)
+  - Displays large values in browser (PC & Mobile on same WiFi)
+*/
+
+#include <ESP8266WiFi.h>        // Library to connect ESP8266 to WiFi
+#include <ESP8266WebServer.h>   // Library to create web server
+#include <DHT.h>                // Library for DHT sensor
+
+#define D5PIN D5                // Define D5 pin for DHT22 data
+
+// Replace with your WiFi details
+const char* ssid = "YOUR_WIFI_NAME";
+const char* pass = "YOUR_WIFI_PASSWORD";
+
+DHT dht(D5PIN, DHT22);          // Create DHT object (pin, sensor type)
+ESP8266WebServer server(80);    // Create web server on port 80
+
+void setup() {
+  Serial.begin(9600);           // Start serial communication
+  dht.begin();                  // Start DHT sensor
+  delay(2000);                  // Wait 2 seconds for sensor stability
+
+  WiFi.begin(ssid, pass);       // Start WiFi connection
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);                 // Wait until connected
+  }
+
+  Serial.println("Connected!");
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());   // Print IP address (open in browser)
+
+  // When someone opens the IP address
+  server.on("/", []() {
+    server.send(200, "text/html",
+      "<html><body style='font-size:50px; text-align:center;'>"
+      + String(dht.readTemperature()) + " C<br>"
+      + String(dht.readHumidity()) + " %"
+      + "</body></html>");
+  });
+
+  server.begin();               // Start the web server
+}
+
+void loop() {
+  server.handleClient();        // Handle incoming browser requests
+}
+\end{lstlisting}
+
+\subsection{NodeMCU Level 3: Auto-Refresh Upgrade}
+Level 3 introduces an architectural CSS and HTML payload upgrade to the web server, allowing dynamic `<meta>` auto-refreshing so the user doesn't have to manually slam F5 to see temperature updates.
+
+\begin{lstlisting}[language=C++, caption=23022026\_Level\_3\_AutoRefresh\_Wifi\_Mobile\_Color.ino]
+/*
+  NodeMCU (ESP8266) + DHT22 WiFi Monitor
+  --------------------------------------
+  What this program does:
+  1. Connects NodeMCU to your WiFi network
+  2. Reads Temperature and Humidity from DHT22 sensor (connected to D5)
+  3. Creates a simple webpage
+  4. Shows values in large Cyan (Temperature) and Pink (Humidity) text
+  5. Automatically refreshes every 5 seconds
+*/
+
+#include <ESP8266WiFi.h>        // Library for WiFi connection
+#include <ESP8266WebServer.h>   // Library to create web server
+#include <DHT.h>                // Library to use DHT sensor
+
+#define D5PIN D5               // Define D5 pin for DHT22 data
+
+// Replace with your WiFi name and password
+const char* ssid = "YOUR_WIFI";
+const char* pass = "YOUR_PASSWORD";
+
+DHT dht(D5PIN, DHT22);          // Create DHT object (Pin, Sensor type)
+ESP8266WebServer server(80);    // Create web server on port 80
+
+void setup() {
+  Serial.begin(9600);           // Start serial communication (for IP display)
+  dht.begin();                  // Start DHT sensor
+
+  WiFi.begin(ssid, pass);       // Start connecting to WiFi
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);                 // Wait until WiFi connects
+  }
+
+  Serial.println("Connected to WiFi");
+  Serial.print("Open this IP in browser: ");
+  Serial.println(WiFi.localIP());   // Print IP address
+
+  // When someone opens the IP address
+  server.on("/", []() {
+
+    float t = dht.readTemperature();   // Read temperature
+    float h = dht.readHumidity();      // Read humidity
+
+    // Create simple HTML page
+    String page = "<html>";
+    page += "<head>";
+    page += "<meta http-equiv='refresh' content='5'>";  // Auto refresh every 5 sec
+    page += "</head>";
+    page += "<body bgcolor='black' text='white'>";
+    page += "<center>";
+
+    page += "<h1>Temperature</h1>";
+    page += "<h1><font color='cyan'>" + String(t) + " C</font></h1>";
+
+    page += "<h1>Humidity</h1>";
+    page += "<h1><font color='pink'>" + String(h) + " %</font></h1>";
+
+    page += "</center>";
+    page += "</body>";
+    page += "</html>";
+
+    server.send(200, "text/html", page);  // Send webpage to browser
+  });
+
+  server.begin();   // Start the web server
+}
+
+void loop() {
+  server.handleClient();   // Continuously handle browser requests
+}
+\end{lstlisting}
+
+\subsection{Pico W Implementation (Level 2 Web Server)}
+MicroPython lacks automated handling loops natively, meaning we must construct raw Berkeley Sockets mathematically and send the explicit HTTP headers (`HTTP/1.0 200 OK`) or the Chrome browser will hard-reject the incoming packet as a malformed socket delivery!
+
+\begin{lstlisting}[language=Python, caption=02\_Wifi\_read\_only.py]
+import network, socket, time, machine, dht, secrets
+
+sensor = dht.DHT22(machine.Pin(15))
+
+wlan = network.WLAN(network.STA_IF)
+wlan.active(True)
+wlan.connect(secrets.SSID, secrets.PASSWORD)
+
+while not wlan.isconnected():
+    time.sleep(1)
+
+print("IP:", wlan.ifconfig()[0])
+
+s = socket.socket()
+s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+s.bind(('0.0.0.0', 80))
+s.listen(1)
+
+while True:
+    sensor.measure()
+    t = "{:.1f}".format(sensor.temperature())
+    h = "{:.1f}".format(sensor.humidity())
+
+    conn, addr = s.accept()
+    req = conn.recv(1024)
+
+    html = f"""
+    <html>
+    <body style="margin:0;height:100vh;display:flex;justify-content:center;align-items:center;font-family:sans-serif;">
+        <div style="text-align:center;">
+            <h1 style="color:cyan;">Temperature: {t} C</h1>
+            <h1 style="color:pink;">Humidity: {h} %</h1>
+        </div>
+    </body>
+    </html>
+    """
+
+    conn.send("HTTP/1.0 200 OK\r\nContent-type: text/html\r\n\r\n")
+    conn.send(html)
+    conn.close()
+\end{lstlisting}
+
+In both platforms, these Level 2 algorithms signify a major achievement: telemetry is active over the air. But as we transition into Level 4, we will introduce administrative architecture, paving the road toward security concepts.
