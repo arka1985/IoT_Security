@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IoT Cybersecurity Masterclass | Syllabus</title>
+    <title>Fundamentals of IoT and Security</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&family=Space+Grotesk:wght@400;700&display=swap');
 
@@ -63,7 +63,7 @@
 
         /* Header Geometry */
         header {
-            padding: 4rem 2rem;
+            padding: 4rem 2rem 2rem 2rem;
             text-align: center;
             position: relative;
         }
@@ -75,26 +75,36 @@
             background: linear-gradient(to right, #38bdf8, #ec4899);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
-            margin-bottom: 1rem;
+            margin-bottom: 0.5rem;
             letter-spacing: -1px;
         }
 
+        h2 {
+            font-size: clamp(1.5rem, 3vw, 2.5rem);
+            color: #e2e8f0;
+            font-weight: 500;
+            margin-bottom: 1.5rem;
+        }
+
         .subtitle {
-            font-size: 1.2rem;
+            font-size: 1.25rem;
+            font-weight: 300;
             color: #94a3b8;
-            max-width: 600px;
+            max-width: 700px;
             margin: 0 auto 2rem auto;
             line-height: 1.6;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 2rem;
         }
 
         /* Glassmorphism Container */
         .container {
-            max-width: 1200px;
+            max-width: 1300px;
             margin: 0 auto;
             padding: 0 2rem 4rem 2rem;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 2rem;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
         }
 
         .glass-card {
@@ -102,12 +112,14 @@
             backdrop-filter: blur(16px);
             -webkit-backdrop-filter: blur(16px);
             border: 1px solid rgba(255, 255, 255, 0.05);
-            border-radius: 24px;
-            padding: 2.5rem;
+            border-radius: 20px;
+            padding: 2rem;
             transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
             position: relative;
             overflow: hidden;
             box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
         }
 
         .glass-card::before {
@@ -123,9 +135,9 @@
         }
 
         .glass-card:hover {
-            transform: translateY(-10px) scale(1.02);
+            transform: translateY(-8px) scale(1.02);
             border-color: rgba(56, 189, 248, 0.4);
-            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 20px rgba(56, 189, 248, 0.2);
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.4), 0 0 15px rgba(56, 189, 248, 0.2);
         }
 
         .glass-card:hover::before {
@@ -133,44 +145,26 @@
         }
 
         .level-badge {
-            background: rgba(56, 189, 248, 0.1);
-            color: #38bdf8;
+            background: rgba(236, 72, 153, 0.1);
+            color: #ec4899;
             padding: 0.4rem 1rem;
             border-radius: 20px;
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 1px;
+            letter-spacing: 2px;
             display: inline-block;
             margin-bottom: 1rem;
-            border: 1px solid rgba(56, 189, 248, 0.2);
+            border: 1px solid rgba(236, 72, 153, 0.2);
+            align-self: flex-start;
         }
 
         .card-title {
             font-family: 'Space Grotesk', sans-serif;
-            font-size: 1.5rem;
+            font-size: 1.3rem;
             margin-bottom: 1rem;
             color: #f1f5f9;
-        }
-
-        .card-list {
-            list-style: none;
-            color: #cbd5e1;
-            font-size: 0.95rem;
-        }
-
-        .card-list li {
-            position: relative;
-            padding-left: 1.5rem;
-            margin-bottom: 0.8rem;
-        }
-
-        .card-list li::before {
-            content: '→';
-            position: absolute;
-            left: 0;
-            color: #ec4899;
-            font-weight: bold;
+            flex-grow: 1;
         }
 
         /* Hardware Tag System */
@@ -178,23 +172,26 @@
             margin-top: 1.5rem;
             display: flex;
             gap: 0.5rem;
+            flex-wrap: wrap;
         }
 
         .tag {
-            font-size: 0.75rem;
-            padding: 0.3rem 0.8rem;
+            font-size: 0.7rem;
+            padding: 0.3rem 0.6rem;
             border-radius: 4px;
             font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
 
-        .tag.esp { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .tag.esp { background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); }
         .tag.pico { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
-        .tag.python { background: rgba(139, 92, 246, 0.15); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.3); }
+        .tag.python { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
 
         /* Floating Actions */
         .action-hub {
             text-align: center;
-            margin: 3rem 0;
+            margin-bottom: 3rem;
         }
 
         .btn {
@@ -212,15 +209,12 @@
             border: none;
             position: relative;
             overflow: hidden;
-        }
-
-        .btn-primary {
             background: linear-gradient(135deg, #38bdf8, #3b82f6);
             color: white;
             box-shadow: 0 4px 15px rgba(56, 189, 248, 0.4);
         }
 
-        .btn-primary:hover {
+        .btn:hover {
             transform: translateY(-3px);
             box-shadow: 0 10px 25px rgba(56, 189, 248, 0.6);
         }
@@ -228,20 +222,19 @@
         .github-link {
             color: #94a3b8;
             text-decoration: none;
-            margin-top: 1.5rem;
+            margin-top: 1rem;
             display: inline-block;
             transition: color 0.3s;
+            font-size: 0.9rem;
         }
 
         .github-link:hover { color: #f8fafc; }
         
-        /* Mobile Specific Overrides */
         @media (max-width: 768px) {
-            header { padding: 3rem 1rem; }
+            header { padding: 3rem 1rem 1rem 1rem; }
             .glass-card { padding: 1.5rem; }
             .container { padding: 0 1rem 3rem 1rem; gap: 1rem;}
         }
-
     </style>
 </head>
 <body>
@@ -250,96 +243,119 @@
     <div class="grid-overlay"></div>
 
     <header>
-        <h1>IoT Cybersecurity Masterclass</h1>
-        <p class="subtitle">An advanced, 10-level academic syllabus exploring IoT vulnerabilities from unencrypted bare-metal sensors to mathematically sound TOTP cryptosystems.</p>
+        <h1>Fundamentals of IoT and Security</h1>
+        <h2>for beginners</h2>
+        <p class="subtitle">A Practical Guide with NodeMCU (ESP8266) and Raspberry Pi Pico WH</p>
+        
         <div class="action-hub">
-            <a href="https://github.com/arka1985/IoT_Security" class="btn btn-primary">📖 View Textbook Curriculum on GitHub</a>
+            <a href="https://github.com/arka1985/IoT_Security" class="btn">📖 Access Full Source Code</a>
             <br>
             <a href="https://github.com/arka1985/IoT_Security.git" class="github-link">github.com/arka1985/IoT_Security</a>
         </div>
     </header>
 
     <div class="container">
-        <!-- Module 1 -->
+        <!-- Level 1 -->
         <div class="glass-card">
-            <div class="level-badge">Module 1: The Baseline</div>
-            <h2 class="card-title">Initial Connectivity</h2>
-            <ul class="card-list">
-                <li>Deploying the DHT22 Environment Sensor in offline serial mode.</li>
-                <li>Constructing the primary Web Server framework to broadcast over Wi-Fi.</li>
-            </ul>
+            <div class="level-badge">Level 01</div>
+            <h3 class="card-title">Offline Sensor Telemetry</h3>
             <div class="hardware-tags">
-                <span class="tag esp">ESP8266 Core</span>
-                <span class="tag pico">RP2040 MicroPython</span>
+                <span class="tag esp">ESP8266</span>
+                <span class="tag pico">Pico WH</span>
             </div>
         </div>
 
-        <!-- Module 2 -->
+        <!-- Level 2 -->
         <div class="glass-card">
-            <div class="level-badge">Module 2: Flawed Defenses</div>
-            <h2 class="card-title">Rudimentary Obfuscation</h2>
-            <ul class="card-list">
-                <li>Initializing native HTTP server authentication protocols.</li>
-                <li>Exploring bitwise XOR logic for telemetry obfuscation over HTTP.</li>
-            </ul>
+            <div class="level-badge">Level 02</div>
+            <h3 class="card-title">Read-Only Wi-Fi Broadcast</h3>
             <div class="hardware-tags">
-                <span class="tag esp">NodeMCU 1.0</span>
+                <span class="tag esp">ESP8266</span>
+                <span class="tag pico">Pico WH</span>
             </div>
         </div>
 
-        <!-- Module 3 -->
+        <!-- Level 3 -->
         <div class="glass-card">
-            <div class="level-badge">Module 3: Exploitation</div>
-            <h2 class="card-title">Network Injection Theory</h2>
-            <ul class="card-list">
-                <li>Systematically demonstrating URL parameter injection vulnerabilities.</li>
-                <li>Executing targeted Interactive Python Attacker scripts against the hardware.</li>
-            </ul>
+            <div class="level-badge">Level 03</div>
+            <h3 class="card-title">Auto-Refresh Dynamic UI</h3>
             <div class="hardware-tags">
-                <span class="tag python">Python 3 Attacker</span>
-                <span class="tag pico">Pico W Target</span>
+                <span class="tag esp">ESP8266</span>
+                <span class="tag pico">Pico WH</span>
             </div>
         </div>
 
-        <!-- Module 4 -->
+        <!-- Level 4 -->
         <div class="glass-card">
-            <div class="level-badge">Module 4: Authentication</div>
-            <h2 class="card-title">HTTP Basic Auth Cracking</h2>
-            <ul class="card-list">
-                <li>Deploying the RFC 7617 HTTP Basic Header.</li>
-                <li>Using automated dictionary aggregation to brute-force integer boundaries.</li>
-            </ul>
+            <div class="level-badge">Level 04</div>
+            <h3 class="card-title">HTTP Basic Authentication</h3>
             <div class="hardware-tags">
-                <span class="tag python">urllib / requests</span>
-                <span class="tag esp">Base64 Translators</span>
+                <span class="tag esp">ESP8266</span>
+                <span class="tag pico">Pico WH</span>
             </div>
         </div>
 
-        <!-- Module 5 -->
+        <!-- Level 5 -->
         <div class="glass-card">
-            <div class="level-badge">Module 5: Resilience</div>
-            <h2 class="card-title">Time Deltas & Lockouts</h2>
-            <ul class="card-list">
-                <li>Generating pseudo-random 2-Factor integer challenges.</li>
-                <li>Implementing native memory state-tracking for 60-second / permanent threshold lockouts.</li>
-            </ul>
+            <div class="level-badge">Level 05</div>
+            <h3 class="card-title">Bitwise XOR Obfuscation</h3>
             <div class="hardware-tags">
-                <span class="tag esp">C++ Flash State</span>
-                <span class="tag pico">State Tracking</span>
+                <span class="tag esp">ESP8266</span>
+                <span class="tag pico">Pico WH</span>
             </div>
         </div>
 
-        <!-- Module 6 -->
+        <!-- Level 6 -->
         <div class="glass-card">
-            <div class="level-badge">Module 6: Final Cryptography</div>
-            <h2 class="card-title">HMAC-SHA1 & TOTP</h2>
-            <ul class="card-list">
-                <li>Syncing universal Y2K Unix Epoch mathematical fixes.</li>
-                <li>Enforcing strict HMAC-SHA1 algorithm hashing via Google Authenticator.</li>
-            </ul>
+            <div class="level-badge">Level 06</div>
+            <h3 class="card-title">Network Parameter Injection (Exploit)</h3>
             <div class="hardware-tags">
-                <span class="tag esp">BearSSL Core</span>
-                <span class="tag pico">hashlib</span>
+                <span class="tag esp">ESP8266</span>
+                <span class="tag pico">Pico WH</span>
+                <span class="tag python">Attacker</span>
+            </div>
+        </div>
+
+        <!-- Level 7 -->
+        <div class="glass-card">
+            <div class="level-badge">Level 07</div>
+            <h3 class="card-title">Dictionary Brute-Forcing Tools</h3>
+            <div class="hardware-tags">
+                <span class="tag esp">ESP8266</span>
+                <span class="tag pico">Pico WH</span>
+                <span class="tag python">Attacker</span>
+            </div>
+        </div>
+
+        <!-- Level 8 -->
+        <div class="glass-card">
+            <div class="level-badge">Level 08</div>
+            <h3 class="card-title">Random 2FA Logic & Weakness</h3>
+            <div class="hardware-tags">
+                <span class="tag esp">ESP8266</span>
+                <span class="tag pico">Pico WH</span>
+                <span class="tag python">Attacker</span>
+            </div>
+        </div>
+
+        <!-- Level 9 -->
+        <div class="glass-card">
+            <div class="level-badge">Level 09</div>
+            <h3 class="card-title">Physical Threshold Lockouts</h3>
+            <div class="hardware-tags">
+                <span class="tag esp">ESP8266</span>
+                <span class="tag pico">Pico WH</span>
+                <span class="tag python">Attacker</span>
+            </div>
+        </div>
+
+        <!-- Level 10 -->
+        <div class="glass-card">
+            <div class="level-badge">Level 10</div>
+            <h3 class="card-title">HMAC-SHA1 Cryptosystems (TOTP)</h3>
+            <div class="hardware-tags">
+                <span class="tag esp">ESP8266</span>
+                <span class="tag pico">Pico WH</span>
             </div>
         </div>
     </div>
