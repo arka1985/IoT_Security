@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>IoT Cybersecurity Masterclass | Syllabus</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&family=Space+Grotesk:wght@400;700&display=swap');
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: #0f172a;
+            color: #f8fafc;
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Dynamic Background Architecture */
+        .cyber-bg {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: 
+                radial-gradient(circle at 15% 50%, rgba(56, 189, 248, 0.15), transparent 25%),
+                radial-gradient(circle at 85% 30%, rgba(236, 72, 153, 0.15), transparent 25%);
+            animation: pulse-glow 15s infinite alternate;
+        }
+
+        .grid-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            transform: perspective(500px) rotateX(60deg) translateY(-100px) translateZ(-200px);
+            animation: grid-move 20s linear infinite;
+        }
+
+        @keyframes pulse-glow {
+            0% { transform: scale(1); filter: hue-rotate(0deg); }
+            100% { transform: scale(1.1); filter: hue-rotate(30deg); }
+        }
+
+        @keyframes grid-move {
+            0% { transform: perspective(500px) rotateX(60deg) translateY(0) translateZ(-200px); }
+            100% { transform: perspective(500px) rotateX(60deg) translateY(50px) translateZ(-200px); }
+        }
+
+        /* Header Geometry */
+        header {
+            padding: 4rem 2rem;
+            text-align: center;
+            position: relative;
+        }
+
+        h1 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: clamp(2.5rem, 5vw, 4.5rem);
+            font-weight: 700;
+            background: linear-gradient(to right, #38bdf8, #ec4899);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 1rem;
+            letter-spacing: -1px;
+        }
+
+        .subtitle {
+            font-size: 1.2rem;
+            color: #94a3b8;
+            max-width: 600px;
+            margin: 0 auto 2rem auto;
+            line-height: 1.6;
+        }
+
+        /* Glassmorphism Container */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 2rem 4rem 2rem;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 2rem;
+        }
+
+        .glass-card {
+            background: rgba(30, 41, 59, 0.4);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 24px;
+            padding: 2.5rem;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            position: relative;
+            overflow: hidden;
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .glass-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 50%;
+            height: 100%;
+            background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.05), transparent);
+            transform: skewX(-20deg);
+            transition: 0.7s;
+        }
+
+        .glass-card:hover {
+            transform: translateY(-10px) scale(1.02);
+            border-color: rgba(56, 189, 248, 0.4);
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4), 0 0 20px rgba(56, 189, 248, 0.2);
+        }
+
+        .glass-card:hover::before {
+            left: 200%;
+        }
+
+        .level-badge {
+            background: rgba(56, 189, 248, 0.1);
+            color: #38bdf8;
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            display: inline-block;
+            margin-bottom: 1rem;
+            border: 1px solid rgba(56, 189, 248, 0.2);
+        }
+
+        .card-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 1.5rem;
+            margin-bottom: 1rem;
+            color: #f1f5f9;
+        }
+
+        .card-list {
+            list-style: none;
+            color: #cbd5e1;
+            font-size: 0.95rem;
+        }
+
+        .card-list li {
+            position: relative;
+            padding-left: 1.5rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .card-list li::before {
+            content: '→';
+            position: absolute;
+            left: 0;
+            color: #ec4899;
+            font-weight: bold;
+        }
+
+        /* Hardware Tag System */
+        .hardware-tags {
+            margin-top: 1.5rem;
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .tag {
+            font-size: 0.75rem;
+            padding: 0.3rem 0.8rem;
+            border-radius: 4px;
+            font-weight: 500;
+        }
+
+        .tag.esp { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
+        .tag.pico { background: rgba(16, 185, 129, 0.15); color: #34d399; border: 1px solid rgba(16, 185, 129, 0.3); }
+        .tag.python { background: rgba(139, 92, 246, 0.15); color: #a78bfa; border: 1px solid rgba(139, 92, 246, 0.3); }
+
+        /* Floating Actions */
+        .action-hub {
+            text-align: center;
+            margin: 3rem 0;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem 2.5rem;
+            border-radius: 50px;
+            text-decoration: none;
+            font-family: 'Space Grotesk', sans-serif;
+            font-weight: 700;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            border: none;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #38bdf8, #3b82f6);
+            color: white;
+            box-shadow: 0 4px 15px rgba(56, 189, 248, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 25px rgba(56, 189, 248, 0.6);
+        }
+
+        .github-link {
+            color: #94a3b8;
+            text-decoration: none;
+            margin-top: 1.5rem;
+            display: inline-block;
+            transition: color 0.3s;
+        }
+
+        .github-link:hover { color: #f8fafc; }
+        
+        /* Mobile Specific Overrides */
+        @media (max-width: 768px) {
+            header { padding: 3rem 1rem; }
+            .glass-card { padding: 1.5rem; }
+            .container { padding: 0 1rem 3rem 1rem; gap: 1rem;}
+        }
+
+    </style>
+</head>
+<body>
+
+    <div class="cyber-bg"></div>
+    <div class="grid-overlay"></div>
+
+    <header>
+        <h1>IoT Cybersecurity Masterclass</h1>
+        <p class="subtitle">An advanced, 10-level academic syllabus exploring IoT vulnerabilities from unencrypted bare-metal sensors to mathematically sound TOTP cryptosystems.</p>
+        <div class="action-hub">
+            <a href="https://github.com/arka1985/IoT_Security" class="btn btn-primary">📖 View Textbook Curriculum on GitHub</a>
+            <br>
+            <a href="https://github.com/arka1985/IoT_Security.git" class="github-link">github.com/arka1985/IoT_Security</a>
+        </div>
+    </header>
+
+    <div class="container">
+        <!-- Module 1 -->
+        <div class="glass-card">
+            <div class="level-badge">Module 1: The Baseline</div>
+            <h2 class="card-title">Initial Connectivity</h2>
+            <ul class="card-list">
+                <li>Deploying the DHT22 Environment Sensor in offline serial mode.</li>
+                <li>Constructing the primary Web Server framework to broadcast over Wi-Fi.</li>
+            </ul>
+            <div class="hardware-tags">
+                <span class="tag esp">ESP8266 Core</span>
+                <span class="tag pico">RP2040 MicroPython</span>
+            </div>
+        </div>
+
+        <!-- Module 2 -->
+        <div class="glass-card">
+            <div class="level-badge">Module 2: Flawed Defenses</div>
+            <h2 class="card-title">Rudimentary Obfuscation</h2>
+            <ul class="card-list">
+                <li>Initializing native HTTP server authentication protocols.</li>
+                <li>Exploring bitwise XOR logic for telemetry obfuscation over HTTP.</li>
+            </ul>
+            <div class="hardware-tags">
+                <span class="tag esp">NodeMCU 1.0</span>
+            </div>
+        </div>
+
+        <!-- Module 3 -->
+        <div class="glass-card">
+            <div class="level-badge">Module 3: Exploitation</div>
+            <h2 class="card-title">Network Injection Theory</h2>
+            <ul class="card-list">
+                <li>Systematically demonstrating URL parameter injection vulnerabilities.</li>
+                <li>Executing targeted Interactive Python Attacker scripts against the hardware.</li>
+            </ul>
+            <div class="hardware-tags">
+                <span class="tag python">Python 3 Attacker</span>
+                <span class="tag pico">Pico W Target</span>
+            </div>
+        </div>
+
+        <!-- Module 4 -->
+        <div class="glass-card">
+            <div class="level-badge">Module 4: Authentication</div>
+            <h2 class="card-title">HTTP Basic Auth Cracking</h2>
+            <ul class="card-list">
+                <li>Deploying the RFC 7617 HTTP Basic Header.</li>
+                <li>Using automated dictionary aggregation to brute-force integer boundaries.</li>
+            </ul>
+            <div class="hardware-tags">
+                <span class="tag python">urllib / requests</span>
+                <span class="tag esp">Base64 Translators</span>
+            </div>
+        </div>
+
+        <!-- Module 5 -->
+        <div class="glass-card">
+            <div class="level-badge">Module 5: Resilience</div>
+            <h2 class="card-title">Time Deltas & Lockouts</h2>
+            <ul class="card-list">
+                <li>Generating pseudo-random 2-Factor integer challenges.</li>
+                <li>Implementing native memory state-tracking for 60-second / permanent threshold lockouts.</li>
+            </ul>
+            <div class="hardware-tags">
+                <span class="tag esp">C++ Flash State</span>
+                <span class="tag pico">State Tracking</span>
+            </div>
+        </div>
+
+        <!-- Module 6 -->
+        <div class="glass-card">
+            <div class="level-badge">Module 6: Final Cryptography</div>
+            <h2 class="card-title">HMAC-SHA1 & TOTP</h2>
+            <ul class="card-list">
+                <li>Syncing universal Y2K Unix Epoch mathematical fixes.</li>
+                <li>Enforcing strict HMAC-SHA1 algorithm hashing via Google Authenticator.</li>
+            </ul>
+            <div class="hardware-tags">
+                <span class="tag esp">BearSSL Core</span>
+                <span class="tag pico">hashlib</span>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
